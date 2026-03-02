@@ -1,0 +1,13 @@
+# Ignore node and dependencies
+node_modules/
+dist/
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
