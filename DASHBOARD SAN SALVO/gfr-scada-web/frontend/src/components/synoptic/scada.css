@@ -58,7 +58,7 @@
 }
 
 .scada-wrap .pipe-shell {
-  stroke: #7f8791;
+  stroke: #7c8797;
 }
 
 .scada-wrap .pipe-core {
@@ -66,23 +66,18 @@
 }
 
 .scada-wrap .pipe-core-inactive {
-  stroke: #4c8cff;
-  opacity: 0.52;
+  stroke: #5f7fb4;
+  opacity: 0.85;
 }
 
 .scada-wrap .pipe-core-active {
-  stroke: #4c8cff;
+  stroke: #5da8ff;
 }
 
-.scada-wrap .pipe-flow {
-  stroke: #dbeafe;
-  stroke-dasharray: 9 8;
-  animation: scada-flow 0.95s linear infinite;
+.scada-wrap .pipe-flow-arrows {
+  fill: #eef6ff;
   opacity: 0.95;
-}
-
-.scada-wrap .pipe-flow-hidden {
-  stroke: transparent;
+  pointer-events: none;
 }
 
 .scada-wrap .pipe-valve-body {
@@ -101,11 +96,6 @@
   fill: #c6ccd4;
   stroke: #8b94a0;
   stroke-width: 0.8px;
-}
-
-@keyframes scada-flow {
-  from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -24; }
 }
 
 .scada-wrap .node {

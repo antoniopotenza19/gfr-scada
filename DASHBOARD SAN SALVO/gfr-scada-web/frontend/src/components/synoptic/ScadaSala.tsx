@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import './scada.css'
 
 export type ScadaMachineStatus = 'ACTIVE' | 'STANDBY' | 'ALARM' | 'OFFLINE'
@@ -80,20 +80,27 @@ export default function ScadaSala({
   const cardLefts = [12, 390, 768]
   const branchXs = [cardLefts[0] + 110, cardLefts[1] + 110, cardLefts[2] + 110]
 
-  const topY = 110
-  const loopBottomY = 200
+  const topY = 96
+  const loopBottomY = 198
   const manifoldY = 250
   const tankY = 300
   const machineConnectY = 560
-  const dryerY = 30
+  const dryerY = 26
   const dryerW = 160
   const dryerH = 170
-  const topPipeStartX = 200
-  const topPipeEndX = 1100
+  const topPipeStartX = 140
+  const topPipeEndX = 1110
+  const upperLeftRiserX = 150
+  const innerLoopLeftX = 198
+  const innerLoopRightX = 900
   const topPipeCenterX = (topPipeStartX + topPipeEndX) / 2
   const centeredDryerX = topPipeCenterX - dryerW / 2
-  const loopRightX = centeredDryerX + dryerW - 5
-  const loopDropX = topPipeCenterX
+  const loopDropX = 600
+  const machineActive = machines.slice(0, 3).map((m) => m.status === 'ACTIVE' && m.kw > 0.1)
+  const activeBranchXs = branchXs.filter((_, idx) => machineActive[idx])
+  const hasAnyActive = activeBranchXs.length > 0
+  const manifoldActiveStart = hasAnyActive ? Math.min(upperLeftRiserX, loopDropX, ...activeBranchXs) : branchXs[0]
+  const manifoldActiveEnd = hasAnyActive ? Math.max(loopDropX, ...activeBranchXs) : branchXs[2]
 
   return (
     <div className="scada-wrap">
@@ -108,13 +115,25 @@ export default function ScadaSala({
       <div className="scada-body">
         <div className="scada-canvas">
           <svg className="scada-svg" viewBox="0 0 1200 760" role="img" aria-label="SCADA aria compressa">
-            <Pipe x1={topPipeStartX} y1={topY} x2={loopRightX} y2={topY} active={flowActive} thickness={10} />
-            <Pipe x1={loopRightX} y1={topY} x2={topPipeEndX} y2={topY} active={flowActive} thickness={10} />
-            <Pipe x1={topPipeStartX} y1={topY} x2={topPipeStartX} y2={loopBottomY} active={flowActive} thickness={10} />
-            <Pipe x1={topPipeStartX} y1={loopBottomY} x2={loopRightX} y2={loopBottomY} active={flowActive} thickness={10} />
-            <Pipe x1={loopRightX} y1={topY} x2={loopRightX} y2={loopBottomY} active={flowActive} thickness={10} />
-            <Pipe x1={loopDropX} y1={loopBottomY} x2={loopDropX} y2={manifoldY} active={flowActive} thickness={10} />
-            <Pipe x1={branchXs[0]} y1={manifoldY} x2={branchXs[2]} y2={manifoldY} active={flowActive} thickness={10} />
+            <PipePath points={[[topPipeStartX, topY], [topPipeEndX, topY]]} active={false} thickness={10} />
+            <PipePath points={[[upperLeftRiserX, topY], [upperLeftRiserX, manifoldY]]} active={false} thickness={10} />
+            <PipePath points={[[upperLeftRiserX, loopBottomY], [innerLoopRightX, loopBottomY]]} active={false} thickness={10} />
+            <PipePath points={[[innerLoopLeftX, topY], [innerLoopLeftX, loopBottomY]]} active={false} thickness={10} />
+            <PipePath points={[[innerLoopRightX, topY], [innerLoopRightX, loopBottomY]]} active={false} thickness={10} />
+            <PipePath points={[[loopDropX, loopBottomY], [loopDropX, manifoldY]]} active={false} thickness={10} />
+            <PipePath points={[[branchXs[0], manifoldY], [branchXs[2], manifoldY]]} active={false} thickness={10} />
+
+            {hasAnyActive ? (
+              <>
+                <PipePath points={[[topPipeStartX, topY], [topPipeEndX, topY]]} active thickness={10} />
+                <PipePath points={[[upperLeftRiserX, topY], [upperLeftRiserX, manifoldY]]} active thickness={10} />
+                <PipePath points={[[upperLeftRiserX, loopBottomY], [innerLoopRightX, loopBottomY]]} active thickness={10} />
+                <PipePath points={[[innerLoopLeftX, topY], [innerLoopLeftX, loopBottomY]]} active thickness={10} />
+                <PipePath points={[[innerLoopRightX, topY], [innerLoopRightX, loopBottomY]]} active thickness={10} />
+                <PipePath points={[[loopDropX, loopBottomY], [loopDropX, manifoldY]]} active thickness={10} />
+                <PipePath points={[[manifoldActiveStart, manifoldY], [manifoldActiveEnd, manifoldY]]} active thickness={10} />
+              </>
+            ) : null}
 
             <g transform={`translate(${centeredDryerX},${dryerY})`}>
               {dryerImageUrl ? (
@@ -126,20 +145,55 @@ export default function ScadaSala({
 
             {machines.slice(0, 3).map((m, idx) => {
               const x = branchXs[idx] ?? 150 + idx * 320
-              const active = m.status === 'ACTIVE' && m.kw > 0.1
-              const rightRiserX = idx === 0 ? x : x + 74
+              const active = machineActive[idx]
+              const rightRiserX = x
               const leftRiserX = x - 74
               const tankInY = tankY + 24
               const tankOutY = tankY + 116
               return (
                 <g key={m.id}>
-                  <Pipe x1={x} y1={manifoldY} x2={rightRiserX} y2={manifoldY} active={active} thickness={10} />
-                  <Pipe x1={rightRiserX} y1={manifoldY} x2={rightRiserX} y2={tankInY} active={active} thickness={10} />
-                  <Pipe x1={rightRiserX} y1={tankInY} x2={x + 30} y2={tankInY} active={active} thickness={10} />
-
-                  <Pipe x1={x - 30} y1={tankOutY} x2={leftRiserX} y2={tankOutY} active={active} thickness={10} />
-                  <Pipe x1={leftRiserX} y1={tankOutY} x2={leftRiserX} y2={machineConnectY} active={active} thickness={10} />
-                  <Pipe x1={leftRiserX} y1={machineConnectY} x2={x} y2={machineConnectY} active={active} thickness={10} />
+                  <PipePath
+                    points={[
+                      [rightRiserX, manifoldY],
+                      [rightRiserX, tankInY],
+                      [x + 30, tankInY],
+                    ]}
+                    active={false}
+                    thickness={10}
+                  />
+                  <PipePath
+                    points={[
+                      [x - 30, tankOutY],
+                      [leftRiserX, tankOutY],
+                      [leftRiserX, machineConnectY],
+                      [x, machineConnectY],
+                    ]}
+                    active={false}
+                    thickness={10}
+                  />
+                  {active ? (
+                    <>
+                      <PipePath
+                        points={[
+                          [rightRiserX, manifoldY],
+                          [rightRiserX, tankInY],
+                          [x + 30, tankInY],
+                        ]}
+                        active
+                        thickness={10}
+                      />
+                      <PipePath
+                        points={[
+                          [x - 30, tankOutY],
+                          [leftRiserX, tankOutY],
+                          [leftRiserX, machineConnectY],
+                          [x, machineConnectY],
+                        ]}
+                        active
+                        thickness={10}
+                      />
+                    </>
+                  ) : null}
                   <Tank x={x - 38} y={tankY} />
                 </g>
               )
@@ -228,68 +282,103 @@ export default function ScadaSala({
   )
 }
 
-function Pipe({
-  x1,
-  y1,
-  x2,
-  y2,
+function PipePath({
+  points,
   active,
   thickness,
 }: {
-  x1: number
-  y1: number
-  x2: number
-  y2: number
+  points: Array<[number, number]>
   active: boolean
   thickness: number
 }) {
+  const pathId = `pipe-${useId().replace(/:/g, '')}`
+  const d = buildCubicOrthogonalPath(points, 10)
+  if (!d) return null
   const baseClass = active ? 'pipe-core pipe-core-active' : 'pipe-core pipe-core-inactive'
-  const flowClass = active ? 'pipe-flow' : 'pipe-flow-hidden'
-  const isHorizontal = Math.abs(y1 - y2) < 0.5
-  const isVertical = Math.abs(x1 - x2) < 0.5
-  const length = isHorizontal ? Math.abs(x2 - x1) : isVertical ? Math.abs(y2 - y1) : 0
-  const margin = 42
-  const spacing = 270
-
-  const valves =
-    length > 160
-      ? Array.from({ length: Math.max(0, Math.floor((length - margin * 2) / spacing) + 1) }, (_, i) => margin + i * spacing)
-      : []
-
+  const pathLength = getPolylineLength(points)
+  const arrowCount = active ? Math.max(2, Math.floor(pathLength / 90)) : 0
   return (
     <g>
-      <line x1={x1} y1={y1} x2={x2} y2={y2} className="pipe-shell" strokeWidth={thickness + 8} strokeLinecap="round" />
-      <line x1={x1} y1={y1} x2={x2} y2={y2} className={baseClass} strokeWidth={thickness} strokeLinecap="round" />
-      <line x1={x1} y1={y1} x2={x2} y2={y2} className={flowClass} strokeWidth={Math.max(4, thickness - 5)} strokeLinecap="round" />
-      {valves.map((offset) => {
-        const px = isHorizontal ? (x1 < x2 ? x1 + offset : x1 - offset) : x1
-        const py = isVertical ? (y1 < y2 ? y1 + offset : y1 - offset) : y1
-        return <ValveMarker key={`${x1}-${y1}-${x2}-${y2}-${offset}`} x={px} y={py} vertical={isVertical} />
-      })}
+      <path id={pathId} d={d} fill="none" />
+      <path d={d} className="pipe-shell" strokeWidth={thickness + 8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d={d} className={baseClass} strokeWidth={thickness} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      {arrowCount > 0 ? (
+        <g className="pipe-flow-arrows">
+          {Array.from({ length: arrowCount }).map((_, index) => (
+            <polygon key={index} points="0,0 -9,-5 -9,5">
+              <animateMotion
+                dur="1.6s"
+                repeatCount="indefinite"
+                rotate="auto"
+                begin={`${(-1.6 / arrowCount) * index}s`}
+              >
+                <mpath href={`#${pathId}`} />
+              </animateMotion>
+            </polygon>
+          ))}
+        </g>
+      ) : null}
     </g>
   )
 }
 
-function ValveMarker({ x, y, vertical }: { x: number; y: number; vertical: boolean }) {
-  if (vertical) {
-    return (
-      <g transform={`translate(${x}, ${y})`} className="pipe-valve">
-        <rect x={-12} y={-5} width={24} height={10} rx={2.5} className="pipe-valve-body" />
-        <rect x={-8} y={-7} width={16} height={14} rx={2.5} className="pipe-valve-band" />
-        <circle cx={-15} cy={0} r={2.1} className="pipe-valve-handle" />
-        <circle cx={15} cy={0} r={2.1} className="pipe-valve-handle" />
-      </g>
-    )
+function buildCubicOrthogonalPath(points: Array<[number, number]>, radius: number) {
+  if (!points.length) return ''
+  if (points.length === 1) return `M${points[0][0]} ${points[0][1]}`
+  if (points.length === 2) return `M${points[0][0]} ${points[0][1]} L${points[1][0]} ${points[1][1]}`
+
+  // Bezier handle factor for quarter-circle approximation.
+  const K = 0.5522847498
+  const fmt = (value: number) => Number(value.toFixed(2))
+  let d = `M${fmt(points[0][0])} ${fmt(points[0][1])}`
+
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const [x0, y0] = points[i - 1]
+    const [x1, y1] = points[i]
+    const [x2, y2] = points[i + 1]
+
+    const inDx = x1 - x0
+    const inDy = y1 - y0
+    const outDx = x2 - x1
+    const outDy = y2 - y1
+
+    const inLen = Math.hypot(inDx, inDy)
+    const outLen = Math.hypot(outDx, outDy)
+    if (inLen === 0 || outLen === 0) continue
+
+    const cornerRadius = Math.min(radius, inLen / 2, outLen / 2)
+    const inUx = inDx / inLen
+    const inUy = inDy / inLen
+    const outUx = outDx / outLen
+    const outUy = outDy / outLen
+
+    const sx = x1 - inUx * cornerRadius
+    const sy = y1 - inUy * cornerRadius
+    const ex = x1 + outUx * cornerRadius
+    const ey = y1 + outUy * cornerRadius
+
+    const handle = cornerRadius * K
+    const c1x = sx + inUx * handle
+    const c1y = sy + inUy * handle
+    const c2x = ex - outUx * handle
+    const c2y = ey - outUy * handle
+
+    d += ` L${fmt(sx)} ${fmt(sy)} C${fmt(c1x)} ${fmt(c1y)} ${fmt(c2x)} ${fmt(c2y)} ${fmt(ex)} ${fmt(ey)}`
   }
 
-  return (
-    <g transform={`translate(${x}, ${y})`} className="pipe-valve">
-      <rect x={-5} y={-12} width={10} height={24} rx={2.5} className="pipe-valve-body" />
-      <rect x={-7} y={-8} width={14} height={16} rx={2.5} className="pipe-valve-band" />
-      <circle cx={0} cy={-15} r={2.1} className="pipe-valve-handle" />
-      <circle cx={0} cy={15} r={2.1} className="pipe-valve-handle" />
-    </g>
-  )
+  const last = points[points.length - 1]
+  d += ` L${fmt(last[0])} ${fmt(last[1])}`
+  return d
+}
+
+function getPolylineLength(points: Array<[number, number]>) {
+  let total = 0
+  for (let i = 1; i < points.length; i += 1) {
+    const [x0, y0] = points[i - 1]
+    const [x1, y1] = points[i]
+    total += Math.hypot(x1 - x0, y1 - y0)
+  }
+  return total
 }
 
 function Tank({ x, y }: { x: number; y: number }) {
