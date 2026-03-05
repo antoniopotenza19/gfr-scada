@@ -48,7 +48,7 @@ type ParsedMachine = {
 }
 
 const LAMINATO_MACHINE_MAP: Array<{ id: string; name: string; aliases: string[]; imageUrl: string }> = [
-  { id: 'C1', name: 'BOOSTER C1', aliases: ['BOOSTER', 'TEMPO 2 1850', 'TEMPO2'], imageUrl: '/images/scada/siadbooster.png' },
+  { id: 'C1', name: 'SIAD 1850', aliases: ['BOOSTER', 'TEMPO 2 1850', 'TEMPO2', 'SIAD 1850'], imageUrl: '/images/scada/siadbooster.png' },
   { id: 'C2', name: 'CREPELLE N.2 P27-200', aliases: ['CREPELLE N2', 'CREPELLE N 2', 'CREPELLE 2', 'CREPELLEN2'], imageUrl: '/images/scada/crepelle.png' },
   { id: 'C3', name: 'CREPELLE N.3 40P20', aliases: ['CREPELLE N3', 'CREPELLE N 3', 'CREPELLE 3', 'CREPELLEN3'], imageUrl: '/images/scada/crepelle.png' },
 ]

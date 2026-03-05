@@ -1,7 +1,8 @@
-import { Fragment, Suspense, lazy, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
 import CompressorsTable from './compressors/CompressorsTable'
 import PowerMetrics from './compressors/PowerMetrics'
+import ScadaSala, { type ScadaMachine, type ScadaMachineStatus } from './synoptic/ScadaSala'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
 
 type FilterKey = 'all' | 'active' | 'anomaly' | 'stale'
@@ -22,15 +23,206 @@ interface DecoratedPlantRow extends PlantRow {
   isAnomaly: boolean
 }
 
-interface SynopticMachineSelection {
-  machineId: string
-  slot: string
-  label: string
-}
-
 const STALE_MS = 60_000
 const STALE_WARNING_MS = 120_000
-const SynopticPanel = lazy(() => import('./synoptic/SynopticPanel'))
+
+type ParsedMachine = {
+  rawName: string
+  u1: number | null
+  u2: number | null
+  u3: number | null
+  i1: number | null
+  i2: number | null
+  i3: number | null
+  cosphi: number | null
+  activePowerKw: number | null
+}
+
+const LAMINATO_MACHINE_MAP: Array<{ id: string; name: string; aliases: string[]; imageUrl: string }> = [
+  { id: 'C1', name: 'SIAD 1850', aliases: ['BOOSTER', 'TEMPO 2 1850', 'TEMPO2', 'SIAD 1850'], imageUrl: '/images/scada/siadbooster.png' },
+  { id: 'C2', name: 'CREPELLE N.2 P27-200', aliases: ['CREPELLE N2', 'CREPELLE N 2', 'CREPELLE 2', 'CREPELLEN2'], imageUrl: '/images/scada/crepelle.png' },
+  { id: 'C3', name: 'CREPELLE N.3 40P20', aliases: ['CREPELLE N3', 'CREPELLE N 3', 'CREPELLE 3', 'CREPELLEN3'], imageUrl: '/images/scada/crepelle.png' },
+]
+
+const BRAVO_MACHINE_MAP: Array<{ id: string; name: string; aliases: string[]; imageUrl: string }> = [
+  { id: 'M1', name: 'MATTEI 1', aliases: ['MATTEI N1', 'MATTEI 1', 'M1'], imageUrl: '/images/scada/siadbooster.png' },
+  { id: 'M2', name: 'MATTEI 2', aliases: ['MATTEI N2', 'MATTEI 2', 'M2'], imageUrl: '/images/scada/siadbooster.png' },
+  { id: 'V1', name: 'GA90 VSD', aliases: ['GA90 VSD', 'GA90', 'V1'], imageUrl: '/images/scada/crepelle.png' },
+]
+
+function canonicalToken(value: string) {
+  return value.toUpperCase().replace(/N[\u00B0\u00BA]/g, 'N').replace(/[^A-Z0-9]/g, '')
+}
+
+function normalizeMachineName(rawName: string) {
+  return rawName
+    .replace(/\s*\((?:V|A|KW)\)\s*$/i, '')
+    .replace(/^3PH\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function parseMachines(signals?: PlantRow['detailSignals']) {
+  if (!signals) return new Map<string, ParsedMachine>()
+
+  const map = new Map<string, ParsedMachine>()
+
+  const getOrCreate = (name: string) => {
+    const raw = normalizeMachineName(name)
+    const key = canonicalToken(raw)
+    const existing = map.get(key)
+    if (existing) return existing
+    const created: ParsedMachine = {
+      rawName: raw,
+      u1: null,
+      u2: null,
+      u3: null,
+      i1: null,
+      i2: null,
+      i3: null,
+      cosphi: null,
+      activePowerKw: null,
+    }
+    map.set(key, created)
+    return created
+  }
+
+  for (const [signalName, info] of Object.entries(signals)) {
+    const signal = signalName.trim()
+    const value = Number(info?.value)
+    if (!Number.isFinite(value)) continue
+
+    const voltage = signal.match(/^U([123])\s+(.+)$/i)
+    if (voltage) {
+      const machine = getOrCreate(voltage[2])
+      if (voltage[1] === '1') machine.u1 = value
+      if (voltage[1] === '2') machine.u2 = value
+      if (voltage[1] === '3') machine.u3 = value
+      continue
+    }
+
+    const current = signal.match(/^[IL]\s*([123])\s+(.+)$/i)
+    if (current) {
+      const machine = getOrCreate(current[2])
+      if (current[1] === '1') machine.i1 = value
+      if (current[1] === '2') machine.i2 = value
+      if (current[1] === '3') machine.i3 = value
+      continue
+    }
+
+    const power = signal.match(/^Potenza Attiva\s+(.+)$/i)
+    if (power) {
+      const machineName = normalizeMachineName(power[1])
+      if (!/\bTOT\b|\bTOTAL\b/i.test(machineName)) {
+        const machine = getOrCreate(machineName)
+        machine.activePowerKw = value
+      }
+      continue
+    }
+
+    const cosphi = signal.match(/^cosphi\s+(.+)$/i)
+    if (cosphi) {
+      const machine = getOrCreate(cosphi[1])
+      machine.cosphi = value
+    }
+  }
+
+  return map
+}
+
+function machineStatus(machine: ParsedMachine | null): ScadaMachineStatus {
+  if (!machine) return 'OFFLINE'
+  const currents = [machine.i1, machine.i2, machine.i3].filter(
+    (value): value is number => value != null && Number.isFinite(value)
+  )
+  const avgCurrent = currents.length ? currents.reduce((sum, value) => sum + value, 0) / currents.length : 0
+  const hasVoltage = [machine.u1, machine.u2, machine.u3].some((value) => value != null && Number.isFinite(value))
+  const power = machine.activePowerKw ?? 0
+  if ((power > 0.5 || avgCurrent > 1) && ((power === 0 && currents.length > 0) || (avgCurrent === 0 && currents.length > 0))) {
+    return 'ALARM'
+  }
+  if (power > 0.5 || avgCurrent > 1) return 'ACTIVE'
+  if (hasVoltage) return 'STANDBY'
+  return 'OFFLINE'
+}
+
+function resolveMappedMachine(
+  rawName: string,
+  mapping: Array<{ id: string; name: string; aliases: string[]; imageUrl: string }>
+) {
+  const key = canonicalToken(rawName)
+  return (
+    mapping.find((entry) =>
+      entry.aliases.some((alias) => {
+        const aliasKey = canonicalToken(alias)
+        return key === aliasKey || key.includes(aliasKey) || aliasKey.includes(key)
+      })
+    ) || null
+  )
+}
+
+function buildMappedMachines(
+  mapping: Array<{ id: string; name: string; aliases: string[]; imageUrl: string }>,
+  parsedMap: Map<string, ParsedMachine>
+) {
+  const slots = new Map<string, ParsedMachine>()
+  for (const machine of parsedMap.values()) {
+    const mapped = resolveMappedMachine(machine.rawName, mapping)
+    if (!mapped) continue
+    slots.set(mapped.id, machine)
+  }
+
+  return mapping.map((entry) => {
+    const parsed = slots.get(entry.id) || null
+    return {
+      id: entry.id,
+      name: entry.name,
+      kw: Number(parsed?.activePowerKw ?? 0),
+      status: machineStatus(parsed),
+      imageUrl: entry.imageUrl,
+      u1: parsed?.u1 ?? null,
+      u2: parsed?.u2 ?? null,
+      u3: parsed?.u3 ?? null,
+      i1: parsed?.i1 ?? null,
+      i2: parsed?.i2 ?? null,
+      i3: parsed?.i3 ?? null,
+      cosphi: parsed?.cosphi ?? null,
+    } satisfies ScadaMachine
+  })
+}
+
+function buildGenericMachines(parsedMap: Map<string, ParsedMachine>) {
+  const parsed = Array.from(parsedMap.values())
+    .sort((a, b) => Number(b.activePowerKw || 0) - Number(a.activePowerKw || 0))
+    .slice(0, 3)
+
+  const slots = ['M1', 'M2', 'V1']
+  return slots.map((slot, index) => {
+    const machine = parsed[index] || null
+    return {
+      id: slot,
+      name: machine ? machine.rawName.toUpperCase() : slot,
+      kw: Number(machine?.activePowerKw ?? 0),
+      status: machineStatus(machine),
+      imageUrl: '/images/scada/crepelle.png',
+      u1: machine?.u1 ?? null,
+      u2: machine?.u2 ?? null,
+      u3: machine?.u3 ?? null,
+      i1: machine?.i1 ?? null,
+      i2: machine?.i2 ?? null,
+      i3: machine?.i3 ?? null,
+      cosphi: machine?.cosphi ?? null,
+    } satisfies ScadaMachine
+  })
+}
+
+function buildInlineScadaMachines(roomLabel: string, signals?: PlantRow['detailSignals']) {
+  const parsedMap = parseMachines(signals)
+  const upper = roomLabel.toUpperCase()
+  if (upper.includes('LAMINATO') || upper.includes('LAMINATI')) return buildMappedMachines(LAMINATO_MACHINE_MAP, parsedMap)
+  if (upper.includes('BRAVO')) return buildMappedMachines(BRAVO_MACHINE_MAP, parsedMap)
+  return buildGenericMachines(parsedMap)
+}
 
 function parseUpdateMs(value: string | null): number | null {
   if (!value) return null
@@ -115,8 +307,16 @@ function extractSignalVariants(
     .map(([, entry]) => entry.value)
 }
 
-function statusPill(status: PlantStatus) {
+function statusPill(status: PlantStatus, hasWarning = false) {
   const base = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium leading-5'
+  if (hasWarning) {
+    return (
+      <span className={`${base} border-rose-300 bg-rose-100 text-rose-700`}>
+        <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+        ! warning
+      </span>
+    )
+  }
   if (status === 'active') {
     return (
       <span className={`${base} border-[#9ddfb9] bg-[#e9fbf3] text-[#118a52]`}>
@@ -150,18 +350,23 @@ function statusPill(status: PlantStatus) {
 }
 
 function progressColor(value: number) {
-  if (value > 80) return 'bg-rose-500'
-  if (value >= 50) return 'bg-amber-500'
+  void value
   return 'bg-emerald-500'
 }
 
 export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }: PlantTableProps) {
+  void siteId
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
-  const [synopticOpen, setSynopticOpen] = useState<Record<string, boolean>>({})
-  const [synopticSelectionBySala, setSynopticSelectionBySala] = useState<Record<string, SynopticMachineSelection>>({})
+  const [expandedSala, setExpandedSala] = useState<string | null>(null)
+  const [synopticSala, setSynopticSala] = useState<string | null>(null)
   const nowMs = Date.now()
+
+  useEffect(() => {
+    if (!selectedSala) return
+    setExpandedSala(selectedSala)
+    setSynopticSala((prev) => (prev === selectedSala ? prev : null))
+  }, [selectedSala])
 
   const decoratedRows = useMemo<DecoratedPlantRow[]>(() => {
     return rows.map((row) => {
@@ -280,7 +485,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
             <tbody>
               {visibleRows.map((row) => {
                 const isSelected = row.sala === selectedSala
-                const isExpanded = Boolean(expanded[row.sala])
+                const isExpanded = expandedSala === row.sala
                 const progress =
                   typeof row.percentEnergiaConsumata === 'number'
                     ? Math.max(0, Math.min(100, row.percentEnergiaConsumata))
@@ -294,6 +499,8 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                 const temperature1 = temperatureVariants[0] ?? row.temperaturaMedia
                 const temperature2 = temperatureVariants[1] ?? null
                 const updateLabel = row.updateMs == null ? '—' : formatLastUpdateTime(row.lastUpdate)
+                const scadaMachines = buildInlineScadaMachines(row.sala, row.detailSignals)
+                const ss1Warning = row.sala.trim().toUpperCase() === 'SS1' && (row.flowValue ?? 0) > 0.1 && (row.potenzaMedia ?? 0) <= 0
 
                 return (
                   <Fragment key={row.sala}>
@@ -321,7 +528,8 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation()
-                              setExpanded((prev) => ({ ...prev, [row.sala]: !prev[row.sala] }))
+                              setExpandedSala((prev) => (prev === row.sala ? null : row.sala))
+                              setSynopticSala((prev) => (prev === row.sala ? prev : null))
                             }}
                             className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-[11px] text-slate-600 hover:bg-slate-100"
                             title={isExpanded ? 'Chiudi dettagli' : 'Apri dettagli'}
@@ -331,7 +539,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                           <span>{row.sala}</span>
                         </div>
                       </td>
-                      <td>{statusPill(row.status)}</td>
+                      <td>{statusPill(row.status, ss1Warning)}</td>
                       <td className="text-slate-700">
                         <span>{updateLabel}</span>
                         {row.isStale ? (
@@ -404,11 +612,12 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation()
-                                      setSynopticOpen((prev) => ({ ...prev, [row.sala]: !prev[row.sala] }))
+                                      setExpandedSala(row.sala)
+                                      setSynopticSala((prev) => (prev === row.sala ? null : row.sala))
                                     }}
                                     className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                                   >
-                                    {synopticOpen[row.sala] ? 'Chiudi SCADA' : 'Apri SCADA'}
+                                    {synopticSala === row.sala ? 'Chiudi SCADA' : 'Apri SCADA'}
                                   </button>
                                 </div>
                               </div>
@@ -437,38 +646,29 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                               ]}
                             />
 
-                            {synopticOpen[row.sala] ? (
-                              <Suspense
-                                fallback={
-                                    <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
-                                    Caricamento SCADA...
-                                  </div>
-                                }
-                              >
-                                <SynopticPanel
-                                  siteId={siteId}
-                                  roomId={row.sala}
-                                  roomLabel={row.sala}
+                            {synopticSala === row.sala ? (
+                              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200">
+                                <ScadaSala
+                                  title={`SCADA ${row.sala}`}
                                   lastUpdate={updateLabel}
-                                  signals={row.detailSignals}
-                                  flowNm3h={row.flowValue}
-                                  pressureBar={row.pressioneMedia}
-                                  temperatureC={row.temperaturaMedia}
-                                  dewPointC={row.dewPointMedia}
-                                  powerTotalKw={row.potenzaMedia}
-                                  csAttuale={row.csPeriodo}
-                                  onMachineSelect={(machine) =>
-                                    setSynopticSelectionBySala((prev) => ({ ...prev, [row.sala]: machine }))
-                                  }
-                                  onClose={() => setSynopticOpen((prev) => ({ ...prev, [row.sala]: false }))}
+                                  dryerImageUrl="/images/scada/essiccatore.png"
+                                  machines={scadaMachines}
+                                  instruments={{
+                                    totalKw: Number.isFinite(row.potenzaMedia as number) ? Number(row.potenzaMedia) : 0,
+                                    cs: Number.isFinite(row.csPeriodo as number) ? Number(row.csPeriodo) : 0,
+                                    dewPoint: Number.isFinite(row.dewPointMedia as number) ? Number(row.dewPointMedia) : 0,
+                                    pressure: Number.isFinite(row.pressioneMedia as number) ? Number(row.pressioneMedia) : 0,
+                                    flow: Number.isFinite(row.flowValue as number) ? Number(row.flowValue) : 0,
+                                    temp: Number.isFinite(row.temperaturaMedia as number) ? Number(row.temperaturaMedia) : 0,
+                                  }}
                                 />
-                              </Suspense>
+                              </div>
                             ) : null}
 
                             <CompressorsTable
                               sala={row.sala}
                               signals={row.detailSignals}
-                              selectedMachine={synopticSelectionBySala[row.sala] || null}
+                              selectedMachine={null}
                             />
                           </div>
                         </td>

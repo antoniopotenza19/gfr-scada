@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import L from 'leaflet'
 
-export type MapMarkerState = 'active' | 'warning' | 'alarm' | 'dismissed'
+export type MapMarkerState = 'active' | 'standby' | 'warning' | 'alarm' | 'dismissed'
 const DEFAULT_ZOOM = 13.8
 const BOTTOM_TOOLTIP_ROOMS = new Set(['LAMINATO', 'LAMINATI', 'BRAVO', 'CENTAC', 'SS2'])
 
@@ -19,6 +19,9 @@ function markerStyle(state: MapMarkerState, selected: boolean) {
     return { fill: '#ef4444', stroke: '#b91c1c', radius: selected ? 10 : 8 }
   }
   if (state === 'warning') {
+    return { fill: '#ef4444', stroke: '#b91c1c', radius: selected ? 10 : 8 }
+  }
+  if (state === 'standby') {
     return { fill: '#f59e0b', stroke: '#b45309', radius: selected ? 10 : 8 }
   }
   if (state === 'dismissed') {
@@ -104,7 +107,7 @@ export default function PlantGeoMap({
         radius: style.radius,
       })
       const tooltipOnBottom = BOTTOM_TOOLTIP_ROOMS.has(point.room)
-      marker.bindTooltip(point.room, {
+      marker.bindTooltip(point.state === 'warning' ? `! ${point.room}` : point.room, {
         direction: tooltipOnBottom ? 'bottom' : 'top',
         offset: tooltipOnBottom ? [0, 8] : [0, -6],
         opacity: 0.95,

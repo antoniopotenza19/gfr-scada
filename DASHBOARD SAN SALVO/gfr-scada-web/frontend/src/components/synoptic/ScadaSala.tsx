@@ -148,7 +148,7 @@ export default function ScadaSala({
   const roomMachines = machines.slice(0, 3)
   const machineActive = roomMachines.map((m) => m.status === 'ACTIVE' && m.kw > 0.1)
   const hasAlarm = roomMachines.some((m) => m.status === 'ALARM')
-  const hasOnline = roomMachines.some((m) => m.status === 'ACTIVE')
+  const hasOnline = machineActive.some(Boolean)
   const hasStandby = roomMachines.some((m) => m.status === 'STANDBY')
   const roomAlertClass = hasAlarm
     ? 'line-tools-alert-alarm'

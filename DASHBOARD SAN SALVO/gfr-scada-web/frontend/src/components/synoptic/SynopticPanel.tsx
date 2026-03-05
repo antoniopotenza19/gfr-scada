@@ -65,7 +65,7 @@ const BRAVO_MACHINE_MAP: Array<{ id: SynopticSlot; label: string; aliases: strin
 ]
 
 const LAMINATO_MACHINE_MAP: Array<{ id: SynopticSlot; label: string; aliases: string[] }> = [
-  { id: 'C1', label: 'BOOSTER C1', aliases: ['BOOSTER', 'TEMPO 2 1850', 'TEMPO2'] },
+  { id: 'C1', label: 'SIAD 1850', aliases: ['BOOSTER', 'TEMPO 2 1850', 'TEMPO2', 'SIAD 1850'] },
   { id: 'C2', label: 'CREPELLE N.2 P27-200', aliases: ['CREPELLE N2', 'CREPELLE N 2', 'CREPELLE 2', 'CREPELLEN2'] },
   { id: 'C3', label: 'CREPELLE N.3 40P20', aliases: ['CREPELLE N3', 'CREPELLE N 3', 'CREPELLE 3', 'CREPELLEN3'] },
 ]

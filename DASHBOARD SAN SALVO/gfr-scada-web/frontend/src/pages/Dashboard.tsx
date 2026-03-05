@@ -217,16 +217,17 @@ function percent(part: number, total: number) {
   return (part / total) * 100
 }
 
-function statusClass(value: number, dismissed: boolean, forceActive: boolean = false) {
+function statusClass(value: number, dismissed: boolean, hasWarning: boolean = false) {
   if (dismissed) return 'border-slate-300 bg-slate-100 text-slate-700 dot-slate'
-  if (forceActive || value > 0) return 'border-[#9ddfb9] bg-[#e9fbf3] text-[#118a52] dot-active'
+  if (hasWarning) return 'border-rose-300 bg-rose-100 text-rose-700 dot-warning'
+  if (value > 0) return 'border-[#9ddfb9] bg-[#e9fbf3] text-[#118a52] dot-active'
   if (value < 0) return 'border-amber-300 bg-amber-50 text-amber-700 dot-amber'
   return 'border-[#ebcf80] bg-[#fff8df] text-[#996300] dot-standby'
 }
 
-function statusText(value: number, dismissed: boolean, forceActive: boolean = false) {
+function statusText(value: number, dismissed: boolean, hasWarning: boolean = false) {
   if (dismissed) return 'dism'
-  if (forceActive) return 'active'
+  if (hasWarning) return '! warning'
   if (value > 0) return 'active'
   if (value < 0) return 'reverse'
   return 'standby'
@@ -339,6 +340,7 @@ export default function Dashboard() {
 
   const [site, setSite] = useState(initialSite)
   const [room, setRoom] = useState(requestedRoom || '')
+  const tableSectionRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (allowedSiteOptions.length === 0) return
@@ -704,12 +706,12 @@ export default function Dashboard() {
       .slice(-1)[0] || null
 
     const dismissed = label.toUpperCase().includes('(DISMESSA)')
-    const hasKwhRealtimeIssue = label.toUpperCase() === 'SS1'
+    const hasRealtimeMismatchIssue = label.toUpperCase() === 'SS1' && nm3 > 0.1 && kwh <= 0
 
     return {
       label,
       dismissed,
-      hasKwhRealtimeIssue,
+      hasRealtimeMismatchIssue,
       available: apiRooms.length > 0,
       loading: apiRooms.some((name) => summaryLoadingByApiRoom.get(name)),
       nm3,
@@ -733,7 +735,7 @@ export default function Dashboard() {
       ? 'dism'
       : !row.available
         ? 'idle'
-        : row.hasKwhRealtimeIssue || row.kwh > 0
+        : row.kwh > 0
           ? 'active'
           : 'idle'
     return {
@@ -768,14 +770,14 @@ export default function Dashboard() {
 
   const selectedRow = roomRows.find((rowItem) => rowItem.label === room) || null
   const selectedRowIsOff = Boolean(
-    selectedRow && selectedRow.available && !selectedRow.dismissed && !selectedRow.hasKwhRealtimeIssue && selectedRow.kwh <= 0
+    selectedRow && selectedRow.available && !selectedRow.dismissed && !selectedRow.hasRealtimeMismatchIssue && selectedRow.kwh <= 0
   )
   const selectedRowHideValues = Boolean(selectedRow && (selectedRow.dismissed || selectedRowIsOff))
   const topFlowValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.nm3.toFixed(1) : '--'
   const topPowerValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.kwh.toFixed(1) : '--'
   const topPressureValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.pressureAvg.toFixed(1) : '--'
   const topDewValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.dewAvg.toFixed(1) : '--'
-  const ss1RealtimeIssue = Boolean(selectedRow?.hasKwhRealtimeIssue)
+  const ss1RealtimeIssue = Boolean(selectedRow?.hasRealtimeMismatchIssue)
   const monthlyVolumeData = fillMissingMonths(
     aggregateMonthlyPoints(monthlyVolumeQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])),
     monthlyFrom,
@@ -815,11 +817,14 @@ export default function Dashboard() {
       }
       const tsMs = parseTsMs(row.ts)
       const isStale = tsMs != null ? currentNowMs - tsMs > 60_000 : true
-      const hasAlarmCondition = row.available && (row.kwh <= 0 || row.nm3 <= 0)
+      const isRoomActive = row.kwh > 0
+      const hasAlarmCondition = row.available && isRoomActive && (row.kwh <= 0 || row.nm3 <= 0)
       if (hasAlarmCondition) {
         states[label] = 'alarm'
-      } else if (isStale || row.loading || !row.available) {
+      } else if (row.hasRealtimeMismatchIssue || isStale || row.loading || !row.available) {
         states[label] = 'warning'
+      } else if (!isRoomActive) {
+        states[label] = 'standby'
       } else {
         states[label] = 'active'
       }
@@ -827,6 +832,13 @@ export default function Dashboard() {
     return states
   }, [roomRows, rooms, currentNowMs])
   const selectedSiteId = (legacyKeyToSiteId(site) || 'san-salvo') as SiteId
+
+  const selectRoomAndScrollToTable = (nextRoom: string) => {
+    setRoom(nextRoom)
+    window.requestAnimationFrame(() => {
+      tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   if (allowedSiteOptions.length === 0) {
     return <Navigate to="/403" replace />
@@ -855,17 +867,19 @@ export default function Dashboard() {
                   const active = room === label
                   const row = roomRows.find((r) => r.label === label)
                   const roomStatus = row
-                    ? statusText(row.kwh, row.dismissed, row.hasKwhRealtimeIssue)
+                    ? statusText(row.kwh, row.dismissed, row.hasRealtimeMismatchIssue)
                     : available
                       ? 'standby'
                       : 'n/d'
                   const roomStatusClass = row
-                    ? statusClass(row.kwh, row.dismissed, row.hasKwhRealtimeIssue)
+                    ? statusClass(row.kwh, row.dismissed, row.hasRealtimeMismatchIssue)
                     : available
                       ? 'border-[#ebcf80] bg-[#fff8df] text-[#996300] dot-standby'
                       : 'border-slate-200 bg-slate-50 text-slate-500 dot-slate'
                   const roomDotClass = roomStatusClass.includes('dot-active')
                     ? 'bg-[#58d68d]'
+                    : roomStatusClass.includes('dot-warning')
+                      ? 'bg-rose-500'
                     : roomStatusClass.includes('dot-standby')
                       ? 'bg-[#e2b73b]'
                       : roomStatusClass.includes('dot-amber')
@@ -873,6 +887,7 @@ export default function Dashboard() {
                         : 'bg-slate-400'
                   const roomStatusPillClass = roomStatusClass
                     .replace(' dot-active', '')
+                    .replace(' dot-warning', '')
                     .replace(' dot-standby', '')
                     .replace(' dot-amber', '')
                     .replace(' dot-slate', '')
@@ -880,7 +895,7 @@ export default function Dashboard() {
                     <button
                       key={label}
                       type="button"
-                      onClick={() => setRoom(label)}
+                      onClick={() => selectRoomAndScrollToTable(label)}
                       className={[
                         'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm',
                         active ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300',
@@ -922,7 +937,7 @@ export default function Dashboard() {
                     markerStates={mapMarkerStates}
                     bookmarks={PLANT_BOOKMARKS}
                     center={SAN_SALVO_MAP_CENTER}
-                    onSelectRoom={setRoom}
+                    onSelectRoom={selectRoomAndScrollToTable}
                   />
                 </ErrorBoundary>
               </div>
@@ -985,12 +1000,14 @@ export default function Dashboard() {
           alertRooms={kpiAlertRooms}
         />
 
-        <PlantTable
-          rows={plantRows}
-          selectedSala={room}
-          onSelectSala={setRoom}
-          siteId={selectedSiteId}
-        />
+        <div ref={tableSectionRef}>
+          <PlantTable
+            rows={plantRows}
+            selectedSala={room}
+            onSelectSala={setRoom}
+            siteId={selectedSiteId}
+          />
+        </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <Card>
