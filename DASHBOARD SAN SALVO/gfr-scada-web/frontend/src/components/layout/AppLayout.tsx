@@ -123,7 +123,7 @@ export default function AppLayout({
           <div className="flex items-center justify-between px-6 py-4">
             <div>
               <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-              <p className="text-sm text-slate-500">{subtitle}</p>
+              {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
             </div>
 
             <div className="flex items-center gap-3">

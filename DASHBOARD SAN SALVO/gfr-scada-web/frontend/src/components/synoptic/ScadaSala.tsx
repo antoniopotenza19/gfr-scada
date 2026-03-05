@@ -63,14 +63,11 @@ function fmt(value: number | null | undefined, digits = 1) {
 }
 
 export default function ScadaSala({
-  title,
-  lastUpdate,
   dryerImageUrl,
   machines,
   instruments,
   onStart,
   onStop,
-  onClose,
 }: ScadaSalaProps) {
   const [selectedId, setSelectedId] = useState<string | null>(machines[0]?.id ?? null)
   const flowActive = useMemo(() => isFlowActive(machines), [machines])
@@ -92,6 +89,7 @@ export default function ScadaSala({
   const loopBottomY = 198 + yShift
   const manifoldY = 250 + yShift
   const tankY = 300 + yShift
+  const boilerOnlyOffsetY = -108
   const machineConnectY = 668 + yShift
   const dryerY = 14 + yShift
   const dryerW = 184
@@ -147,10 +145,19 @@ export default function ScadaSala({
   ])
   const valveSize = 152
   const valveOffsetY = -8
-  const machineActive = machines
-    .slice(0, 3)
-    .map((m) => m.status === 'ACTIVE' && m.kw > 0.1)
-  const hasAlarm = machines.some((m) => m.status === 'ALARM')
+  const roomMachines = machines.slice(0, 3)
+  const machineActive = roomMachines.map((m) => m.status === 'ACTIVE' && m.kw > 0.1)
+  const hasAlarm = roomMachines.some((m) => m.status === 'ALARM')
+  const hasOnline = roomMachines.some((m) => m.status === 'ACTIVE')
+  const hasStandby = roomMachines.some((m) => m.status === 'STANDBY')
+  const roomAlertClass = hasAlarm
+    ? 'line-tools-alert-alarm'
+    : hasOnline
+      ? 'line-tools-alert-ok'
+      : hasStandby
+      ? 'line-tools-alert-standby'
+      : 'line-tools-alert-offline'
+  const roomAlertLabel = hasAlarm ? 'ALLARME' : hasOnline ? 'OK' : hasStandby ? 'STANDBY' : 'OK'
   const activeBranchXs = branchXs.filter((_, idx) => machineActive[idx])
   const hasAnyActive = activeBranchXs.length > 0
   const manifoldActiveStart = hasAnyActive ? Math.min(upperLeftRiserX, loopDropX, ...activeBranchXs) : branchXs[0]
@@ -158,14 +165,6 @@ export default function ScadaSala({
 
   return (
     <div className="scada-wrap">
-      <div className="scada-header">
-        <div>
-          <div className="scada-title">{title}</div>
-          <div className="scada-subtitle">Last update: {lastUpdate || '--'}</div>
-        </div>
-        <button className="btn btn-ghost" onClick={onClose}>Chiudi</button>
-      </div>
-
       <div className="scada-body">
         <div className="scada-canvas">
           <svg className="scada-svg" viewBox="0 0 1200 760" role="img" aria-label="SCADA aria compressa">
@@ -214,7 +213,7 @@ export default function ScadaSala({
               )}
             </g>
 
-            {machines.slice(0, 3).map((m, idx) => {
+            {roomMachines.map((m, idx) => {
               const x = branchXs[idx] ?? 150 + idx * 320
               const active = machineActive[idx]
               const leftTankShiftX = idx === 0 ? -24 : 0
@@ -242,7 +241,7 @@ export default function ScadaSala({
                       />
                     </>
                   ) : null}
-                  <Tank x={tankCenterX - 38} y={tankY} />
+                  <Tank x={tankCenterX - 94} y={tankY + boilerOnlyOffsetY} />
                 </g>
               )
             })}
@@ -252,37 +251,48 @@ export default function ScadaSala({
             <div className="line-tools-box">
               <div className="line-tools-top">
                 <span className="line-tools-room-title">SITUAZIONE SALA</span>
-                <div className={`line-tools-alert ${hasAlarm ? 'line-tools-alert-alarm' : 'line-tools-alert-ok'}`}>
+                <div className={`line-tools-alert ${roomAlertClass}`}>
                   <span className="line-tools-alert-dot" aria-hidden="true" />
-                  <span>{hasAlarm ? 'ALLARME' : 'OK'}</span>
+                  <span>{roomAlertLabel}</span>
                 </div>
               </div>
 
-              <div className="line-tools-head">
-                <span>POTENZA</span>
-                <strong className="line-tools-kw">
-                  <span>{instruments.totalKw.toFixed(1)} kW</span>
-                </strong>
+              <div className="line-tools-section">
+                <div className="line-tools-head">
+                  <span>POTENZA</span>
+                  <strong className="line-tools-kw">
+                    <span>{instruments.totalKw.toFixed(1)} kW</span>
+                  </strong>
+                </div>
+                <div className="line-tools-head line-tools-head-secondary">
+                  <span>Consumo specifico</span>
+                  <strong className="line-tools-cs-value">{instruments.cs.toFixed(3)} kWh/Nm3</strong>
+                </div>
               </div>
-              <div className="line-tools-row line-tools-row-value-only">{instruments.cs.toFixed(3)} kWh/Nm3</div>
-              <div className="line-tools-head">
-                <span>Dew Point</span>
-                <strong className="line-tools-inline-value">{instruments.dewPoint.toFixed(1)} degC</strong>
+
+              <div className="line-tools-section line-tools-section-dew">
+                <div className="line-tools-head">
+                  <span>DEW POINT</span>
+                  <strong className="line-tools-dew-inline">{instruments.dewPoint.toFixed(1)} degC</strong>
+                </div>
               </div>
-              <div className="line-tools-head"><span>Flowmeter</span></div>
-              <div className="line-tools-kv">
-                <div><span>Pressione</span><span>{instruments.pressure.toFixed(1)} bar</span></div>
-                <div><span>Flusso</span><span>{instruments.flow.toFixed(1)} Nm3/h</span></div>
-                <div><span>Temperatura</span><span>{instruments.temp.toFixed(1)} degC</span></div>
-                {typeof instruments.totalizer === 'number' ? (
-                  <div><span>Totalizzatore</span><span>{instruments.totalizer.toFixed(1)} m3</span></div>
-                ) : null}
+
+              <div className="line-tools-section">
+                <div className="line-tools-head"><span>FLOWMETER</span></div>
+                <div className="line-tools-kv">
+                  <div><span>Pressione</span><span>{instruments.pressure.toFixed(1)} bar</span></div>
+                  <div><span>Flusso</span><span>{instruments.flow.toFixed(1)} Nm3/h</span></div>
+                  <div><span>Temperatura</span><span>{instruments.temp.toFixed(1)} degC</span></div>
+                  {typeof instruments.totalizer === 'number' ? (
+                    <div><span>Totalizzatore</span><span>{instruments.totalizer.toFixed(1)} m3</span></div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="machines-layer">
-            {machines.slice(0, 3).map((m, idx) => (
+            {roomMachines.map((m, idx) => (
               <div key={m.id} className={`machine-slot machine-slot-${idx + 1}`} style={{ left: `${cardLefts[idx]}px` }}>
                 <div className="machine-skid">
                   <div className={`machine-img machine-img-below machine-img-large machine-img-slot-${idx + 1}`}>
@@ -339,6 +349,7 @@ function PipePath({
       <path id={pathId} d={d} fill="none" />
       <path d={d} className="pipe-shell" strokeWidth={thickness + 8} strokeLinecap="round" strokeLinejoin="round" fill="none" />
       <path d={d} className={baseClass} strokeWidth={thickness} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+      <path d={d} className="pipe-highlight" strokeWidth={Math.max(2, thickness * 0.28)} strokeLinecap="round" strokeLinejoin="round" fill="none" />
       {arrowCount > 0 ? (
         <g className="pipe-flow-arrows">
           {Array.from({ length: arrowCount }).map((_, index) => (
@@ -483,13 +494,18 @@ function findPipeJunctions(paths: Array<Array<[number, number]>>) {
 }
 
 function Tank({ x, y }: { x: number; y: number }) {
+  const tankW = 188
+  const tankH = 368
   return (
     <g transform={`translate(${x}, ${y})`}>
-      <rect x={0} y={0} width={76} height={150} rx={34} className="tank-body" />
-      <rect x={18} y={26} width={40} height={44} rx={6} className="tank-window" />
-      <circle cx={38} cy={112} r={6} className="tank-valve" />
-      <line x1={18} y1={150} x2={18} y2={168} className="tank-leg" />
-      <line x1={58} y1={150} x2={58} y2={168} className="tank-leg" />
+      <image
+        href="/images/scada/boiler.png"
+        x={0}
+        y={0}
+        width={tankW}
+        height={tankH}
+        preserveAspectRatio="xMidYMid meet"
+      />
     </g>
   )
 }

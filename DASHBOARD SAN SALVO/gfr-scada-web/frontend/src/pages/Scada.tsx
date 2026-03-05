@@ -452,11 +452,12 @@ export default function Scada() {
     if (label === room) return 'active'
     return 'ready'
   }
+  const pageTitle = `${site}${room ? ` - SALA ${room}` : ''}`
 
   return (
     <AppLayout
-      title="SCADA"
-      subtitle={`${site}${room ? ` - Sala ${room}` : ''}`}
+      title={pageTitle}
+      subtitle={`Last update: ${lastUpdate || '--'}`}
       plant={site}
       onPlantChange={(nextSite) => {
         if (!nextSite) return
