@@ -9,4 +9,6 @@ from importlib import import_module
 _mod = import_module('app.models.models')
 globals().update({k: getattr(_mod, k) for k in dir(_mod) if not k.startswith('_')})
 
+_ingest_mod = import_module('app.models.ingest_state')
+globals().update({k: getattr(_ingest_mod, k) for k in dir(_ingest_mod) if not k.startswith('_')})
 

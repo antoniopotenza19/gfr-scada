@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 export default function Login() {
@@ -8,31 +8,28 @@ export default function Login() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // quick dev auth: call backend if available
-    try {
-      const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8000'
-      const resp = await fetch(`${baseUrl}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user, password: pass })
-      })
-      if (resp.ok) {
-        const data = await resp.json()
-        if (data.access_token) sessionStorage.setItem('gfr_token', data.access_token)
-        navigate('/dashboard')
-      } else {
-        // fallback: accept any non-empty in dev
-        if (user && pass) {
-          sessionStorage.setItem('gfr_token', 'dev-token')
-          navigate('/dashboard')
-        }
-      }
-    } catch (err) {
-      if (user && pass) {
-        sessionStorage.setItem('gfr_token', 'dev-token')
-        navigate('/dashboard')
-      }
+    const baseUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8000'
+
+    const resp = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass }),
+      credentials: 'include',
+    })
+
+    if (!resp.ok) {
+      alert('Invalid credentials')
+      return
     }
+
+    const data = await resp.json()
+    if (data.access_token) {
+      sessionStorage.setItem('gfr_token', data.access_token)
+      navigate('/sites')
+      return
+    }
+
+    alert('Login failed')
   }
 
   return (

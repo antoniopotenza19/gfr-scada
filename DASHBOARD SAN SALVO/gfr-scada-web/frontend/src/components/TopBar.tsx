@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+﻿import { Link, useNavigate } from 'react-router-dom'
 import { usePlants } from '../hooks/usePlants'
 import { useEffect } from 'react'
 
@@ -13,7 +13,6 @@ export default function TopBar({ plant, setPlant, date, setDate }: TopBarProps) 
   const navigate = useNavigate()
   const { data: plants, isLoading } = usePlants()
 
-  // if current plant disappears from list, clear it
   useEffect(() => {
     if (plants && plant && !plants.includes(plant)) {
       setPlant('')
@@ -32,7 +31,7 @@ export default function TopBar({ plant, setPlant, date, setDate }: TopBarProps) 
           <div className="h-8 w-8 bg-slate-200 rounded" />
           <div>
             <div className="text-lg font-semibold">GFR SCADA</div>
-            <div className="text-xs text-slate-500">Plant: {plant || '—'}</div>
+            <div className="text-xs text-slate-500">Plant: {plant || '-'}</div>
           </div>
         </div>
 

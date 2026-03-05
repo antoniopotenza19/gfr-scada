@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, Float, Boolean, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db import Base
@@ -57,6 +57,9 @@ class AlarmEvent(Base):
 
 class Measurement(Base):
     __tablename__ = 'measurements'
+    __table_args__ = (
+        UniqueConstraint('plant', 'signal', 'ts', name='uq_measurements_plant_signal_ts'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     plant = Column(String(100), index=True)

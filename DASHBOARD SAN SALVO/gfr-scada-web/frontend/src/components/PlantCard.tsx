@@ -1,6 +1,5 @@
-import React from 'react'
-import { PlantSummary } from '../types/api'
-import KpiCard from './KpiCard'
+import type { PlantSummary } from '../types/api'
+import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
 
 interface Props {
   plant: string
@@ -14,22 +13,26 @@ export default function PlantCard({ plant, summary, onClick }: Props) {
   const updated = summary ? new Date(summary.last_update).toLocaleTimeString() : '--'
 
   return (
-    <div
-      className="bg-white border border-slate-200 rounded p-4 cursor-pointer hover:shadow"
+    <Card
+      className="cursor-pointer transition-colors hover:border-slate-300"
       onClick={onClick}
     >
-      <h3 className="font-semibold mb-2">{plant}</h3>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="text-sm text-slate-500">Pressure</div>
-        <div className="text-right font-semibold">
-          {pressure} {pressure !== '--' ? 'barg' : ''}
+      <CardHeader>
+        <CardTitle>{plant}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          <div className="text-slate-500">Pressure</div>
+          <div className="text-right font-semibold text-slate-900">
+            {pressure} {pressure !== '--' ? 'barg' : ''}
+          </div>
+          <div className="text-slate-500">Dew Point</div>
+          <div className="text-right font-semibold text-slate-900">
+            {dew} {dew !== '--' ? 'degC' : ''}
+          </div>
         </div>
-        <div className="text-sm text-slate-500">Dew Point</div>
-        <div className="text-right font-semibold">
-          {dew} {dew !== '--' ? '°C' : ''}
-        </div>
-      </div>
-      <div className="mt-4 text-xs text-slate-400">Updated: {updated}</div>
-    </div>
+        <div className="mt-4 text-xs text-slate-500">Updated: {updated}</div>
+      </CardContent>
+    </Card>
   )
 }

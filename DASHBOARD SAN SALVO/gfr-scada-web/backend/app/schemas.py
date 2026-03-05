@@ -23,6 +23,12 @@ class TimeseriesPoint(BaseModel):
     value: float
 
 
+class PlantTimeseries(BaseModel):
+    plant: str
+    signal: str
+    points: List[TimeseriesPoint]
+
+
 class AlarmEvent(BaseModel):
     code: str
     severity: str
@@ -30,9 +36,16 @@ class AlarmEvent(BaseModel):
     ts: str
 
 
+class AlarmCreateIn(BaseModel):
+    room: Optional[str] = None
+    signal: str
+    severity: str
+    message: str
+
+
 class PlantSummary(BaseModel):
     plant: str
-    last_update: str
+    last_update: Optional[str] = None
     signals: Dict[str, Dict[str, Any]]
     compressors: List[Dict[str, Any]]
     dryers: List[Dict[str, Any]]

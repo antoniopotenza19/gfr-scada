@@ -1,79 +1,128 @@
 # gfr-scada-web
 
-Fullstack SCADA web demo: FastAPI backend, TimescaleDB, Alembic, JWT auth, WebSocket realtime, static AdminLTE-like pages served from `/static`.
+Monorepo SCADA: FastAPI backend + Timescale/Postgres + React/Vite frontend.
 
-Quick run (dev):
+## Env
 
-1) Copy `.env.example` to `.env` and edit values.
+1. Copia `.env.example` in `.env`.
+2. Imposta almeno:
+   - `DATABASE_URL`
+   - `JWT_SECRET`
+   - `CORS_ALLOW_ORIGINS`
+   - `BASE_CSV_URL` (default: `http://94.138.172.234:46812/shared`)
+   - `INGEST_POLL_SECONDS` (default: `5`)
+   - `INGEST_AUTOSTART` (`true`/`false`)
+   - `INGEST_PLANTS` (opzionale, lista separata da virgole)
+   - `DEV_DEFAULT_ADMIN_USERNAME` (solo bootstrap locale, default: `admin`)
+   - `DEV_DEFAULT_ADMIN_PASSWORD` (solo bootstrap locale, default: `admin123`)
 
-2) Run with Docker Compose:
+### Credenziali default sviluppo locale
 
-```bash
+- Username: `admin`
+- Password: `admin123`
+- Ruolo: `admin`
+- Valide solo quando `APP_ENV` e impostato a `development`/`dev`/`local` durante il seed.
+
+## Avvio Locale Windows (senza Docker completo)
+
+### Opzione A: DB in Docker, backend/frontend locali
+
+```powershell
 cd gfr-scada-web
-docker compose up --build
+docker compose up -d db
 ```
 
-This starts TimescaleDB (Postgres), and the backend (Uvicorn). Backend serves static pages at `http://localhost:8000/static/` and API at `http://localhost:8000/api/`.
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+alembic upgrade head
+python app/scripts/seed.py
+uvicorn app.main:app --reload
+```
 
-Seed admin and example data:
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+### Opzione B: tutto locale (Postgres già installato)
+
+Stessi comandi backend/frontend, con `DATABASE_URL` puntato al Postgres locale.
+
+## Ingest CSV remoto
+
+La sorgente usa direttamente HTTP directory listing:
+`BASE_CSV_URL/YYYY/MM/DD/`
+
+Esempio:
+`http://94.138.172.234:46812/shared/2026/03/02/`
+
+Endpoint manuale:
 
 ```bash
-docker compose exec backend python app/scripts/seed.py
+GET /api/ingest/csv?plant=DEMO_PLANT&date=2026-01-01
 ```
 
-Run Alembic migrations (inside backend container):
+## Realtime Ingest Scheduler
+
+Polling near real-time configurabile (default 5s), ingest incrementale con cursor `last_ts` per file in tabella `ingest_state`.
+
+Nuovi endpoint:
+- `GET /api/ingest/status`
+- `GET /api/ingest/sources`
+- `POST /api/ingest/start`
+- `POST /api/ingest/stop`
+
+Le API frontend esistenti `/api/plants/...` restano invariate.
+
+## Debugging data freeze
+
+Quando i valori sembrano bloccati:
+
+1. Verifica salute API e DB:
 
 ```bash
-docker compose exec backend bash -c "./run_migrations.sh"
+curl -s http://127.0.0.1:8000/api/health
 ```
 
-Example: ingest a single CSV for plant **BRAVO** on **2026‑01‑01** directly from the remote server:
+Controlla:
+- `db_connected: true`
+- `ingest_running: true`
+- `measurements_latest_ts` in avanzamento per ogni plant.
+
+2. Verifica stato ingest realtime:
 
 ```bash
-# default URL is built from BASE_CSV_URL + YYYY/MM/DD/ + filename
-curl "http://localhost:8000/api/ingest/csv?plant=BRAVO&date=2026-01-01"
-
-# optionally override the base URL
-curl "http://localhost:8000/api/ingest/csv?plant=BRAVO&date=2026-01-01&base_url=http://other.example.com/data"
+curl -s http://127.0.0.1:8000/api/ingest/status
 ```
 
-The backend constructs the remote path using the pattern:  
-`BASE_CSV_URL/YYYY/MM/DD/MM-DD-<PLANT_UPPER>.CSV`  
+Controlla per ogni job:
+- `last_modified`
+- `last_byte_offset`
+- `last_success_ts`
+- `last_insert_count`
+- `last_error` (deve essere `null`)
+- `no_progress_cycles` (se cresce, file aggiornato ma nessun nuovo dato utile inserito).
 
-For example, with `BASE_CSV_URL=http://94.138.172.234:46812/shared` and plant **BRAVO** on **2026-01-01**, it will fetch:  
-`http://94.138.172.234:46812/shared/2026/01/01/01-01-BRAVO.CSV`
+3. Verifica in DB che `max(ts)` cresca:
 
-No local CSV folder or synchronization is required.
-
-After migration the `measurements` table will be created and converted to a TimescaleDB hypertable if supported by the DB.
-
-**DEV: Reset database objects**
-
-If a migration fails during development and leaves leftover objects (for example a partially-created `measurements` table or `alembic_version`), you can run the included dev-only cleanup script to remove them.
-
-From the project root run (dev-only):
-
-```bash
-docker compose exec backend bash -lc "scripts/db_cleanup_dev.sh"
-# non-interactive, also drop dev tables `alarms`, `users`, `commands`:
-docker compose exec backend bash -lc "scripts/db_cleanup_dev.sh -y --drop-others"
+```sql
+SELECT plant, MAX(ts) AS latest_ts
+FROM measurements
+GROUP BY plant
+ORDER BY plant;
 ```
 
-The script will attempt to execute SQL via the DB container using:
+4. Verifica frontend polling in DevTools Network:
+- summary: richiesta ogni ~5s (`/api/plants/{plant}/summary`)
+- alarms: richiesta ogni ~15s (`/api/plants/{plant}/alarms`)
+- timeseries: richiesta ogni ~15-30s (`/api/plants/{plant}/timeseries`)
 
-```bash
-docker compose exec db psql -U $POSTGRES_USER -d $POSTGRES_DB -c "DROP TABLE IF EXISTS measurements CASCADE; DROP TABLE IF EXISTS alembic_version CASCADE;"
-```
-
-After running the cleanup, re-run migrations:
-
-```bash
-docker compose exec backend alembic upgrade head
-```
-
-Warning: **DEV ONLY: this will delete data**. Do not run against production databases.
-
-
-Notes:
-- Change `JWT_SECRET` in `.env` to a secure value.
-- Alembic config in `backend/alembic`.
+5. In ambiente `vite dev`, usa il pannello `Debug data freeze` nella Dashboard:
+- plant/room selezionato
+- `summary.last_update`
+- ultimo fetch per query principali
+- `API base URL` effettivamente in uso.
