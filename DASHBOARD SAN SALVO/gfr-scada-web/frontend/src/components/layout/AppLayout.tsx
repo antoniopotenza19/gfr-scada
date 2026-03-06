@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { usePlants } from '../../hooks/usePlants'
 import { canViewDevFeatures, getAuthUserFromSessionToken } from '../../utils/auth'
+import './app-layout.css'
 
 interface AppLayoutProps {
   title: string
@@ -17,14 +18,52 @@ interface AppLayoutProps {
 interface SidebarItem {
   label: string
   to?: string
+  icon: 'plants' | 'dashboard' | 'scada' | 'alarms' | 'dev'
+}
+type SidebarIcon = SidebarItem['icon']
+
+function NavGlyph({ kind }: { kind: SidebarIcon }) {
+  if (kind === 'plants') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 20h16M6 20V7l6-3 6 3v13M10 10h4M10 14h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (kind === 'dashboard') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12h7V4H4v8Zm9 8h7v-6h-7v6Zm0-10h7V4h-7v6Zm-9 10h7v-4H4v4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'scada') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 6h16v10H4zM9 20h6M12 16v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  if (kind === 'alarms') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 4 3.5 19h17L12 4Zm0 5v5m0 3h.01" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 8h10M7 12h6m-6 4h10M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
 }
 
 function SidebarLink({ item }: { item: SidebarItem }) {
   if (!item.to) {
     return (
-      <span className="flex items-center gap-3 rounded-r-md border-l-2 border-transparent px-4 py-2 text-sm text-slate-500">
-        <span className="h-2 w-2 rounded-full bg-slate-600" />
-        {item.label}
+      <span className="app-shell-nav-item is-disabled">
+        <span className="app-shell-nav-icon" aria-hidden="true"><NavGlyph kind={item.icon} /></span>
+        <span>{item.label}</span>
       </span>
     )
   }
@@ -32,17 +71,10 @@ function SidebarLink({ item }: { item: SidebarItem }) {
   return (
     <NavLink
       to={item.to}
-      className={({ isActive }) =>
-        [
-          'flex items-center gap-3 rounded-r-md border-l-2 px-4 py-2 text-sm transition-colors',
-          isActive
-            ? 'border-cyan-400 bg-slate-800 text-slate-100'
-            : 'border-transparent text-slate-300 hover:bg-slate-800 hover:text-slate-100',
-        ].join(' ')
-      }
+      className={({ isActive }) => `app-shell-nav-item${isActive ? ' is-active' : ''}`}
     >
-      <span className="h-2 w-2 rounded-full bg-slate-500" />
-      {item.label}
+      <span className="app-shell-nav-icon" aria-hidden="true"><NavGlyph kind={item.icon} /></span>
+      <span>{item.label}</span>
     </NavLink>
   )
 }
@@ -63,6 +95,8 @@ export default function AppLayout({
   const user = getAuthUserFromSessionToken()
   const options = selectorOptions ?? plants ?? []
   const optionsLoading = selectorOptions ? false : isLoading
+  const showPlantSelector = options.length > 1
+  const showSitesMenu = user.allowedSiteIds.length > 1
 
   useEffect(() => {
     if (plant && options.length > 0 && !options.includes(plant)) {
@@ -80,78 +114,100 @@ export default function AppLayout({
   const scadaTarget = scadaName ? `/scada/${scadaName}` : undefined
 
   const items: SidebarItem[] = [
-    { label: 'Impianti', to: '/sites' },
-    { label: 'Dashboard', to: '/dashboard' },
-    { label: 'SCADA', to: isScadaRoute ? location.pathname : scadaTarget },
-    { label: 'Alarms', to: '/alarms' },
+    ...(showSitesMenu ? ([{ label: 'Impianti', to: '/sites', icon: 'plants' as SidebarIcon }]) : []),
+    { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' as SidebarIcon },
+    { label: 'SCADA', to: isScadaRoute ? location.pathname : scadaTarget, icon: 'scada' as SidebarIcon },
+    { label: 'Alarms', to: '/alarms', icon: 'alarms' as SidebarIcon },
   ]
-  if (canViewDevFeatures(user)) items.push({ label: 'Dev', to: '/dev' })
+  if (canViewDevFeatures(user)) items.push({ label: 'Dev', to: '/dev', icon: 'dev' as SidebarIcon })
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <aside className="fixed inset-y-0 left-0 w-64 bg-gradient-to-b from-slate-900 to-slate-950 text-slate-100">
-        <div className="border-b border-slate-800 px-6 py-5">
-          <Link to="/dashboard" className="block">
-            <div className="text-lg font-semibold tracking-wide">GFR SCADA</div>
-            <div className="text-xs text-slate-400">Enterprise Monitoring</div>
+    <div className="app-shell">
+      <aside className="app-shell-sidebar">
+        <div className="app-shell-brand">
+          <Link to="/dashboard" className="app-shell-brand-link">
+            <div className="app-shell-brand-title">GFR Engineering</div>
+            <div className="app-shell-brand-subtitle">Energy Saving</div>
           </Link>
         </div>
 
-        <nav className="mt-4 space-y-1 px-2">
+        <nav className="app-shell-nav">
           {items.map((item) => (
             <SidebarLink key={item.label} item={item} />
           ))}
         </nav>
 
-        <div className="absolute inset-x-0 bottom-0 border-t border-slate-800 px-4 py-4">
-          <div className="mb-2 rounded-md bg-slate-800/80 px-3 py-2">
-            <div className="text-xs text-slate-400">Signed in as</div>
-            <div className="text-sm font-medium text-slate-100">{user.role}</div>
+        <div className="app-shell-user-wrap">
+          <div className="app-shell-user-card">
+            <div className="app-shell-user-identity">
+              <span className="app-shell-user-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-3.3 0-6 1.7-6 3.8V20h12v-2.2c0-2.1-2.7-3.8-6-3.8Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span>{user.role}</span>
+            </div>
           </div>
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 hover:bg-slate-800"
+            className="app-shell-logout app-shell-logout-sidebar"
           >
             Logout
           </button>
         </div>
       </aside>
 
-      <div className="pl-64">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900">{title}</h1>
-              {subtitle ? <p className="text-sm text-slate-500">{subtitle}</p> : null}
+      <div className="app-shell-main">
+        <header className="app-shell-header">
+          <div className="app-shell-header-inner">
+            <div className="app-shell-headings">
+              <h1 className="app-shell-title">{title}</h1>
+              {subtitle ? <p className="app-shell-subtitle">{subtitle}</p> : null}
             </div>
 
-            <div className="flex items-center gap-3">
-              <select
-                value={plant}
-                onChange={(e) => onPlantChange(e.target.value)}
-                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none focus:border-slate-400"
-                disabled={optionsLoading}
-              >
-                <option value="">{selectorPlaceholder}</option>
-                {options.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
+            <div className="app-shell-controls-group">
+            <div className="app-shell-controls">
+              {showPlantSelector ? (
+                <label className="app-shell-control app-shell-control-select">
+                  <span className="app-shell-control-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M4 20h16M6 20V7l6-3 6 3v13M10 10h4M10 14h4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <select
+                    value={plant}
+                    onChange={(e) => onPlantChange(e.target.value)}
+                    className="app-shell-select"
+                    disabled={optionsLoading}
+                  >
+                    <option value="">{selectorPlaceholder}</option>
+                    {options.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={handleLogout}
-                className="h-9 rounded-md border border-slate-300 px-4 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                className="app-shell-logout app-shell-logout-header"
               >
+                <span className="app-shell-logout-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M10 6H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h4M14 8l4 4-4 4M18 12H9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
                 Logout
               </button>
+            </div>
             </div>
           </div>
         </header>
 
-        <main className="p-6">{children}</main>
+        <main className="app-shell-content">{children}</main>
       </div>
     </div>
   )

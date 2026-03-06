@@ -51,6 +51,7 @@ export default function Alarms() {
   const fromStr = fromDate ? fromDate.toISOString() : undefined
   const toStr = fromDate ? new Date(fromDate.getTime() + 24 * 60 * 60 * 1000).toISOString() : undefined
   const { data: alarms, isLoading } = useAlarms(plant, fromStr, toStr)
+  const scadaFallbackPlant = plant || allowedPlants[0] || ''
 
   return (
     <AppLayout
@@ -59,6 +60,7 @@ export default function Alarms() {
       plant={plant}
       onPlantChange={setPlant}
       selectorOptions={allowedPlants}
+      scadaPlant={scadaFallbackPlant}
     >
       <div className="space-y-6">
         <SectionTitle

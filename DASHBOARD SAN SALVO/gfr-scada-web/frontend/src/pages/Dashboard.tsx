@@ -854,8 +854,8 @@ export default function Dashboard() {
       selectorPlaceholder="Select site"
       scadaPlant={selectedApiRoom}
     >
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+      <div className="min-w-0 space-y-4">
+        <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 xl:grid-cols-3">
           <Card className="h-full">
             <CardHeader>
               <CardTitle className="text-slate-900">Sale Stabilimento</CardTitle>
@@ -945,7 +945,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-4">
           {isSummaryLoading
             ? Array.from({ length: 4 }).map((_, i) => (
                 <Card key={`kpi-${i}`}>
@@ -1009,7 +1009,7 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
           <Card>
             <CardHeader>
               <CardTitle className="text-slate-900">Volume prodotto per Mese Nm3 (Impianto Totale)</CardTitle>

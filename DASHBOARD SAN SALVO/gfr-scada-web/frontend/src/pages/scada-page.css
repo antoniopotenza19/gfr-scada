@@ -1,0 +1,195 @@
+.scada-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scada-page-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scada-rooms-card {
+  border-radius: 14px;
+  border-color: var(--border-base);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-soft);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.scada-room-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  min-height: 0;
+  padding-right: 3px;
+}
+
+.scada-rooms-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.scada-room-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  padding: 11px 12px;
+  font-size: 14px;
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.scada-room-row > span:first-child {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.scada-room-row:hover {
+  background: #f8fbff;
+  border-color: #d7e7f3;
+}
+
+.scada-room-row.is-selected {
+  border-color: rgba(0, 188, 212, 0.28);
+  background: rgba(0, 188, 212, 0.08);
+  color: #0f5f71;
+  box-shadow: 0 2px 8px rgba(0, 188, 212, 0.08);
+}
+
+.scada-room-row.is-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.scada-room-row.is-unmapped {
+  background: #f8fafc;
+  border-color: var(--border-soft);
+  color: #7b8797;
+}
+
+.scada-room-badge {
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: #f7fbff;
+  color: #526274;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 3px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scada-room-badge.is-active {
+  border-color: rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+}
+
+.scada-room-badge.is-standby {
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.1);
+  color: #b45309;
+}
+
+.scada-room-badge.is-warning {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.1);
+  color: #b91c1c;
+}
+
+.scada-room-badge.is-off {
+  border-color: rgba(107, 122, 140, 0.25);
+  background: rgba(107, 122, 140, 0.1);
+  color: #64748b;
+}
+
+.scada-room-badge-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #94a3b8;
+  display: inline-block;
+}
+
+.scada-room-badge-dot.is-active {
+  background: #00e676;
+}
+
+.scada-room-badge-dot.is-standby {
+  background: #ffd54f;
+}
+
+.scada-room-badge-dot.is-warning {
+  background: #ff5252;
+}
+
+.scada-room-badge-dot.is-off {
+  background: #6b7280;
+}
+
+.scada-shell-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.scada-shell-frame {
+  border-radius: 16px;
+  border: 1px solid var(--border-base);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-panel);
+  padding: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scada-shell-frame > .scada-wrap {
+  height: 100%;
+  min-height: 0;
+}
+
+.scada-shell-frame > .scada-wrap .scada-body {
+  min-height: 0;
+}
+
+.scada-shell-frame > .scada-wrap .scada-fit-viewport {
+  height: 100%;
+  min-height: 0;
+}
+
+@media (min-width: 1024px) {
+  .scada-page-grid {
+    grid-template-columns: clamp(190px, 19vw, 260px) minmax(0, 1fr);
+  }
+}

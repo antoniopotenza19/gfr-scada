@@ -1,7 +1,8 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './scada.css'
 
 export type ScadaMachineStatus = 'ACTIVE' | 'STANDBY' | 'ALARM' | 'OFFLINE'
+export type ScadaRoomStatus = 'active' | 'standby' | 'warning' | 'off'
 
 export type ScadaMachine = {
   id: string
@@ -34,6 +35,7 @@ interface ScadaSalaProps {
   dryerImageUrl?: string
   machines: ScadaMachine[]
   instruments: ScadaInstruments
+  roomStatus?: ScadaRoomStatus
   onStart?: (machineId: string) => Promise<void> | void
   onStop?: (machineId: string) => Promise<void> | void
   onClose?: () => void
@@ -66,9 +68,14 @@ export default function ScadaSala({
   dryerImageUrl,
   machines,
   instruments,
+  roomStatus,
   onStart,
   onStop,
 }: ScadaSalaProps) {
+  const scadaBaseWidth = 1320
+  const scadaBaseHeight = 760
+  const fitViewportRef = useRef<HTMLDivElement | null>(null)
+  const [fit, setFit] = useState({ scale: 1, offsetX: 0, offsetY: 0 })
   const [selectedId, setSelectedId] = useState<string | null>(machines[0]?.id ?? null)
   const flowActive = useMemo(() => isFlowActive(machines), [machines])
 
@@ -81,7 +88,52 @@ export default function ScadaSala({
     setSelectedId(machines[0].id)
   }, [machines, selectedId])
 
-  const cardLefts = [12, 428, 830]
+  useLayoutEffect(() => {
+    const viewport = fitViewportRef.current
+    if (!viewport) return
+
+    const updateFit = () => {
+      const rect = viewport.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return
+      const scaleX = rect.width / scadaBaseWidth
+      const scaleY = rect.height / scadaBaseHeight
+      const nextScaleRaw = Math.min(scaleX, scaleY)
+      const nextScale = Number.isFinite(nextScaleRaw) && nextScaleRaw > 0 ? nextScaleRaw : 1
+      const scaledWidth = scadaBaseWidth * nextScale
+      const scaledHeight = scadaBaseHeight * nextScale
+      const nextOffsetX = Math.max(0, (rect.width - scaledWidth) / 2)
+      const nextOffsetY = Math.max(0, (rect.height - scaledHeight) / 2)
+
+      setFit((prev) => {
+        if (
+          Math.abs(prev.scale - nextScale) < 0.001 &&
+          Math.abs(prev.offsetX - nextOffsetX) < 0.5 &&
+          Math.abs(prev.offsetY - nextOffsetY) < 0.5
+        ) {
+          return prev
+        }
+        return { scale: nextScale, offsetX: nextOffsetX, offsetY: nextOffsetY }
+      })
+    }
+
+    updateFit()
+    const observer = new ResizeObserver(updateFit)
+    observer.observe(viewport)
+    window.addEventListener('resize', updateFit)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateFit)
+    }
+  }, [])
+
+  const xShift = -22
+  const cardLefts = [12 + xShift, 428 + xShift, 830 + xShift]
+  const machineGroupShift = -16
+  const machineSlotLefts = [
+    cardLefts[0] + 22 + machineGroupShift,
+    cardLefts[1] + 10 + machineGroupShift,
+    cardLefts[2] + 22 + machineGroupShift,
+  ]
   const branchXs = [cardLefts[0] + 110, cardLefts[1] + 110, cardLefts[2] + 110]
 
   const yShift = -24
@@ -94,13 +146,13 @@ export default function ScadaSala({
   const dryerY = 14 + yShift
   const dryerW = 184
   const dryerH = 194
-  const topPipePathEndX = 1182
-  const upperLeftRiserX = 150
-  const innerLoopLeftX = 198
-  const innerLoopRightX = 900
+  const topPipePathEndX = 1182 + xShift
+  const upperLeftRiserX = 150 + xShift
+  const innerLoopLeftX = 198 + xShift
+  const innerLoopRightX = 900 + xShift
   const loopBottomEndX = innerLoopRightX - 12
   const centeredDryerX = branchXs[1] - dryerW / 2
-  const loopDropX = 600
+  const loopDropX = 600 + xShift
   const upperLeftRiserBottomY = manifoldY - 12
   const topWithUpperLeftRiserPoints: Array<[number, number]> = [
     [upperLeftRiserX, upperLeftRiserBottomY],
@@ -150,24 +202,44 @@ export default function ScadaSala({
   const hasAlarm = roomMachines.some((m) => m.status === 'ALARM')
   const hasOnline = machineActive.some(Boolean)
   const hasStandby = roomMachines.some((m) => m.status === 'STANDBY')
-  const roomAlertClass = hasAlarm
-    ? 'line-tools-alert-alarm'
+  const fallbackRoomStatus: ScadaRoomStatus = hasAlarm
+    ? 'warning'
     : hasOnline
-      ? 'line-tools-alert-ok'
+      ? 'active'
       : hasStandby
-      ? 'line-tools-alert-standby'
-      : 'line-tools-alert-offline'
-  const roomAlertLabel = hasAlarm ? 'ALLARME' : hasOnline ? 'OK' : hasStandby ? 'STANDBY' : 'OK'
+        ? 'standby'
+        : 'off'
+  const resolvedRoomStatus = roomStatus ?? fallbackRoomStatus
+  const roomAlertClass = resolvedRoomStatus === 'warning'
+    ? 'line-tools-alert-warning'
+    : resolvedRoomStatus === 'active'
+      ? 'line-tools-alert-ok'
+      : resolvedRoomStatus === 'standby'
+        ? 'line-tools-alert-standby'
+        : 'line-tools-alert-offline'
+  const roomAlertLabel = resolvedRoomStatus === 'warning'
+    ? 'WARNING'
+    : resolvedRoomStatus === 'active'
+      ? 'OK'
+      : resolvedRoomStatus === 'standby'
+        ? 'STANDBY'
+        : 'OK'
   const activeBranchXs = branchXs.filter((_, idx) => machineActive[idx])
   const hasAnyActive = activeBranchXs.length > 0
   const manifoldActiveStart = hasAnyActive ? Math.min(upperLeftRiserX, loopDropX, ...activeBranchXs) : branchXs[0]
   const manifoldActiveEnd = hasAnyActive ? Math.max(loopDropX, ...activeBranchXs) : branchXs[2]
-
   return (
     <div className="scada-wrap">
       <div className="scada-body">
-        <div className="scada-canvas">
-          <svg className="scada-svg" viewBox="0 0 1200 760" role="img" aria-label="SCADA aria compressa">
+        <div className="scada-fit-viewport" ref={fitViewportRef}>
+          <div
+            className="scada-zoom-lock"
+            style={{
+              transform: `translate(${fit.offsetX}px, ${fit.offsetY}px) scale(${fit.scale})`,
+            }}
+          >
+            <div className="scada-canvas">
+            <svg className="scada-svg" viewBox="0 0 1200 760" role="img" aria-label="SCADA aria compressa">
             <PipePath points={topWithUpperLeftRiserPoints} active={false} thickness={10} />
             <PipePath points={dryerLoopPoints} active={false} thickness={10} />
             <PipePath points={leftBoilerToHorizontalPoints} active={false} thickness={10} />
@@ -218,7 +290,7 @@ export default function ScadaSala({
               const active = machineActive[idx]
               const leftTankShiftX = idx === 0 ? -24 : 0
               const tankCenterX = x + leftTankShiftX
-              const leftRiserX = tankCenterX - 118
+              const leftRiserX = tankCenterX - 78
               const tankOutY = tankY + 116
               const defaultOutletPoints: Array<[number, number]> = [
                 [leftRiserX, machineConnectY],
@@ -245,9 +317,9 @@ export default function ScadaSala({
                 </g>
               )
             })}
-          </svg>
+            </svg>
 
-          <div className="line-tools">
+            <div className="line-tools">
             <div className="line-tools-box">
               <div className="line-tools-top">
                 <span className="line-tools-room-title">SITUAZIONE SALA</span>
@@ -289,11 +361,11 @@ export default function ScadaSala({
                 </div>
               </div>
             </div>
-          </div>
+            </div>
 
-          <div className="machines-layer">
+            <div className="machines-layer">
             {roomMachines.map((m, idx) => (
-              <div key={m.id} className={`machine-slot machine-slot-${idx + 1}`} style={{ left: `${cardLefts[idx]}px` }}>
+              <div key={m.id} className={`machine-slot machine-slot-${idx + 1}`} style={{ left: `${machineSlotLefts[idx]}px` }}>
                 <div className="machine-skid">
                   <div className={`machine-img machine-img-below machine-img-large machine-img-slot-${idx + 1}`}>
                     {m.imageUrl ? <img src={m.imageUrl} alt={m.name} /> : <div className="img-placeholder">FOTO {m.id}</div>}
@@ -320,6 +392,8 @@ export default function ScadaSala({
                 </div>
               </div>
             ))}
+            </div>
+            </div>
           </div>
         </div>
       </div>

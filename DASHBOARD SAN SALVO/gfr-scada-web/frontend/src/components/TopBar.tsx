@@ -30,7 +30,7 @@ export default function TopBar({ plant, setPlant, date, setDate }: TopBarProps) 
         <div className="flex items-center gap-4">
           <div className="h-8 w-8 bg-slate-200 rounded" />
           <div>
-            <div className="text-lg font-semibold">GFR SCADA</div>
+            <div className="text-lg font-semibold">GFR Engineering</div>
             <div className="text-xs text-slate-500">Plant: {plant || '-'}</div>
           </div>
         </div>

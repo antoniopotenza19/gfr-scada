@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
 import CompressorsTable from './compressors/CompressorsTable'
 import PowerMetrics from './compressors/PowerMetrics'
-import ScadaSala, { type ScadaMachine, type ScadaMachineStatus } from './synoptic/ScadaSala'
+import ScadaSala, { type ScadaMachine, type ScadaMachineStatus, type ScadaRoomStatus } from './synoptic/ScadaSala'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card'
 
 type FilterKey = 'all' | 'active' | 'anomaly' | 'stale'
@@ -354,6 +354,13 @@ function progressColor(value: number) {
   return 'bg-emerald-500'
 }
 
+function scadaRoomStatus(status: PlantStatus, hasWarning: boolean): ScadaRoomStatus {
+  if (hasWarning) return 'warning'
+  if (status === 'active') return 'active'
+  if (status === 'idle') return 'standby'
+  return 'off'
+}
+
 export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }: PlantTableProps) {
   void siteId
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -468,7 +475,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
         </div>
 
         <div className="overflow-x-auto rounded-md border border-slate-200">
-          <table className="w-full min-w-[1220px] text-[13px] [&_th]:px-3 [&_td]:px-3 [&_th]:py-3 [&_td]:py-3 [&_th]:whitespace-nowrap [&_td]:whitespace-nowrap [&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
+          <table className="w-full table-auto text-[13px] [&_th]:px-3 [&_td]:px-3 [&_th]:py-3 [&_td]:py-3 [&_th:first-child]:pl-4 [&_td:first-child]:pl-4 [&_th:last-child]:pr-4 [&_td:last-child]:pr-4">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-left text-[10px] font-medium uppercase tracking-[0.06em] text-slate-500">
                 <th>Sala</th>
@@ -501,6 +508,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                 const updateLabel = row.updateMs == null ? '—' : formatLastUpdateTime(row.lastUpdate)
                 const scadaMachines = buildInlineScadaMachines(row.sala, row.detailSignals)
                 const ss1Warning = row.sala.trim().toUpperCase() === 'SS1' && (row.flowValue ?? 0) > 0.1 && (row.potenzaMedia ?? 0) <= 0
+                const inlineRoomStatus = scadaRoomStatus(row.status, ss1Warning || row.isWarningStale || row.isAnomaly)
 
                 return (
                   <Fragment key={row.sala}>
@@ -653,6 +661,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                                   lastUpdate={updateLabel}
                                   dryerImageUrl="/images/scada/essiccatore.png"
                                   machines={scadaMachines}
+                                  roomStatus={inlineRoomStatus}
                                   instruments={{
                                     totalKw: Number.isFinite(row.potenzaMedia as number) ? Number(row.potenzaMedia) : 0,
                                     cs: Number.isFinite(row.csPeriodo as number) ? Number(row.csPeriodo) : 0,

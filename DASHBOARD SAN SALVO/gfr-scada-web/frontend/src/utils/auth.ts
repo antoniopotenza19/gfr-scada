@@ -80,3 +80,9 @@ export function getUserRoleFromSessionToken(): EffectiveUserRole {
 export function canSendCommands(role: EffectiveUserRole): boolean {
   return role === 'gfr' || role === 'dev'
 }
+
+export function defaultPathForUser(user: AuthUser | null | undefined): string {
+  if (!user || user.allowedSiteIds.length === 0) return '/sites'
+  if (user.allowedSiteIds.length === 1) return `/dashboard?site=${user.allowedSiteIds[0]}`
+  return '/sites'
+}

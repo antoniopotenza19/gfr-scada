@@ -1,5 +1,6 @@
-﻿import React, { useState } from 'react'
+import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { defaultPathForUser, getAuthUserFromSessionToken } from '../utils/auth'
 
 export default function Login() {
   const [user, setUser] = useState('')
@@ -25,7 +26,7 @@ export default function Login() {
     const data = await resp.json()
     if (data.access_token) {
       sessionStorage.setItem('gfr_token', data.access_token)
-      navigate('/sites')
+      navigate(defaultPathForUser(getAuthUserFromSessionToken()))
       return
     }
 
@@ -37,7 +38,7 @@ export default function Login() {
       <div className="w-full max-w-md bg-white border border-slate-200 p-8 rounded-lg shadow-sm">
         <div className="text-center mb-6">
           <div className="h-12 w-12 rounded-md bg-slate-200 mx-auto mb-2" />
-          <h1 className="text-2xl font-semibold">GFR SCADA</h1>
+          <h1 className="text-2xl font-semibold">GFR Engineering</h1>
           <p className="text-sm text-slate-500">Login to your dashboard</p>
         </div>
         <form onSubmit={submit} className="space-y-4">
@@ -60,3 +61,4 @@ export default function Login() {
     </div>
   )
 }
+

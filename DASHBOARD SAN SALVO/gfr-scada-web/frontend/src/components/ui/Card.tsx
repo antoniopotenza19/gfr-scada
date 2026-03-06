@@ -24,7 +24,12 @@ export function CardHeader({ className, ...props }: DivProps) {
 }
 
 export function CardTitle({ className, ...props }: HeadingProps) {
-  return <h3 className={joinClassNames('text-base font-semibold text-slate-900', className)} {...props} />
+  return (
+    <h3
+      className={joinClassNames('text-[18px] font-semibold leading-[1.4] tracking-[-0.01em] text-slate-900', className)}
+      {...props}
+    />
+  )
 }
 
 export function CardContent({ className, ...props }: DivProps) {

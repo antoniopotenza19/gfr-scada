@@ -18,16 +18,16 @@ export default function KpiRow({ totalFlowNm3, totalPowerKw, totalKwhToday, aler
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
       <Card>
         <CardContent className="p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Portata Totale Impianto</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{formatOneDecimal(totalFlowNm3)}</div>
-          <div className="text-xs text-slate-500">Nm3/h realtime</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">Portata Totale Impianto</div>
+          <div className="mt-2 text-[32px] font-bold leading-[1.2] text-slate-900">{formatOneDecimal(totalFlowNm3)}</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">Nm3/h realtime</div>
         </CardContent>
       </Card>
       <Card>
         <CardContent className="p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Potenza Totale Impianto</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{formatOneDecimal(totalPowerKw)}</div>
-          <div className="text-xs text-slate-500">kW medi</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">Potenza Totale Impianto</div>
+          <div className="mt-2 text-[32px] font-bold leading-[1.2] text-slate-900">{formatOneDecimal(totalPowerKw)}</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">kW medi</div>
         </CardContent>
       </Card>
       <Card>
@@ -35,9 +35,9 @@ export default function KpiRow({ totalFlowNm3, totalPowerKw, totalKwhToday, aler
       </Card>
       <Card>
         <CardContent className="p-4">
-          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Sale In Allarme</div>
-          <div className="mt-2 text-2xl font-semibold text-slate-900">{Math.max(0, Math.trunc(alertRooms))}</div>
-          <div className="text-xs text-slate-500">anomalia o stale</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">Sale In Allarme</div>
+          <div className="mt-2 text-[32px] font-bold leading-[1.2] text-slate-900">{Math.max(0, Math.trunc(alertRooms))}</div>
+          <div className="text-[13px] font-normal leading-[1.5] tracking-[0.2px] text-[#6b7a8c]">anomalia o stale</div>
         </CardContent>
       </Card>
     </div>

@@ -12,6 +12,7 @@ interface PlantGeoMapProps {
   bookmarks: Record<string, [number, number]>
   center: [number, number]
   onSelectRoom: (room: string) => void
+  showRecenter?: boolean
 }
 
 function markerStyle(state: MapMarkerState, selected: boolean) {
@@ -37,6 +38,7 @@ export default function PlantGeoMap({
   bookmarks,
   center,
   onSelectRoom,
+  showRecenter = true,
 }: PlantGeoMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -120,13 +122,15 @@ export default function PlantGeoMap({
   return (
     <div className="relative h-full min-h-[20rem] w-full">
       <div ref={containerRef} className="h-full min-h-[20rem] w-full rounded-md" />
-      <button
-        type="button"
-        onClick={recenterMap}
-        className="absolute right-3 top-3 z-[500] rounded-md border border-slate-300 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-white"
-      >
-        Ricentra
-      </button>
+      {showRecenter ? (
+        <button
+          type="button"
+          onClick={recenterMap}
+          className="absolute right-3 top-3 z-[500] rounded-md border border-slate-300 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-white"
+        >
+          Ricentra
+        </button>
+      ) : null}
     </div>
   )
 }

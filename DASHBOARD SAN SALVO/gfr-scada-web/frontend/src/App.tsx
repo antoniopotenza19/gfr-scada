@@ -7,7 +7,7 @@ import Sites from './pages/Sites'
 import SiteDetail from './pages/SiteDetail'
 import NotAuthorized from './pages/NotAuthorized'
 import DevTools from './pages/DevTools'
-import { canViewDevFeatures, canViewSite, getAuthUserFromSessionToken } from './utils/auth'
+import { canViewDevFeatures, canViewSite, defaultPathForUser, getAuthUserFromSessionToken } from './utils/auth'
 import { isSiteId } from './constants/sites'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -32,13 +32,15 @@ function RequireDev({ children }: { children: JSX.Element }) {
 
 export default function App() {
   const token = sessionStorage.getItem('gfr_token')
+  const authUser = getAuthUserFromSessionToken()
+  const defaultAuthedPath = defaultPathForUser(authUser)
 
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
         path="/"
-        element={token ? <Navigate to="/sites" /> : <Navigate to="/login" />}
+        element={token ? <Navigate to={defaultAuthedPath} /> : <Navigate to="/login" />}
       />
       <Route path="/403" element={<RequireAuth><NotAuthorized /></RequireAuth>} />
       <Route path="/sites" element={<RequireAuth><Sites /></RequireAuth>} />
@@ -47,7 +49,7 @@ export default function App() {
       <Route path="/scada/:plant" element={<RequireAuth><Scada /></RequireAuth>} />
       <Route path="/alarms" element={<RequireAuth><Alarms /></RequireAuth>} />
       <Route path="/dev" element={<RequireAuth><RequireDev><DevTools /></RequireDev></RequireAuth>} />
-      <Route path="*" element={<Navigate to={token ? '/sites' : '/login'} replace />} />
+      <Route path="*" element={<Navigate to={token ? defaultAuthedPath : '/login'} replace />} />
     </Routes>
   )
 }

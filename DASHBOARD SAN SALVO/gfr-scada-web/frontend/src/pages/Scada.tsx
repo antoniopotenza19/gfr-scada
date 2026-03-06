@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { useQueries } from '@tanstack/react-query'
 import { sendMachineCommand } from '../api/commands'
+import { fetchPlantSummary } from '../api/plants'
 import AppLayout from '../components/layout/AppLayout'
 import type { ScadaMachine, ScadaMachineStatus } from '../components/synoptic/ScadaSala'
 import ScadaSala from '../components/synoptic/ScadaSala'
@@ -11,6 +13,7 @@ import { SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId } from '../constants/sites'
 import { canRemoteControl, canViewDevFeatures, canViewSite, getAuthUserFromSessionToken } from '../utils/auth'
 import type { PlantSummary } from '../types/api'
+import './scada-page.css'
 
 type SignalInfo = { value: number; unit: string; ts: string }
 type SignalMap = Record<string, SignalInfo>
@@ -320,6 +323,14 @@ function buildRoomApiMapping(
   return mapping
 }
 
+function parseTsMs(ts: string | null | undefined) {
+  if (!ts) return null
+  const ms = new Date(ts).getTime()
+  return Number.isFinite(ms) ? ms : null
+}
+
+type RoomIndicatorStatus = 'active' | 'standby' | 'warning' | 'off'
+
 export default function Scada() {
   const { plant } = useParams()
   const requested = (plant || '').trim()
@@ -380,6 +391,33 @@ export default function Scada() {
     () => buildRoomApiMapping(rooms, normalizedPlants, canonicalPlants),
     [rooms, normalizedPlants, canonicalPlants]
   )
+  const siteApiRooms = useMemo(() => {
+    const all = rooms.flatMap((label) => roomApiMapping.get(label) || [])
+    return Array.from(new Set(all))
+  }, [rooms, roomApiMapping])
+  const siteSummaryQueries = useQueries({
+    queries: siteApiRooms.map((apiRoom) => ({
+      queryKey: ['scada-room-summary', site, apiRoom],
+      queryFn: async () => fetchPlantSummary(apiRoom),
+      staleTime: 10_000,
+      cacheTime: 120_000,
+      keepPreviousData: true,
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: 1,
+    })),
+  })
+  const summariesByApiRoom = useMemo(() => {
+    const map = new Map<string, PlantSummary>()
+    siteApiRooms.forEach((apiRoom, index) => {
+      const summary = siteSummaryQueries[index]?.data as PlantSummary | undefined
+      if (summary) map.set(apiRoom, summary)
+    })
+    return map
+  }, [siteApiRooms, siteSummaryQueries])
+
   const selectedApiRoom = (roomApiMapping.get(room) || [])[0] || ''
   const summaryQuery = usePlantSummary(selectedApiRoom, !!selectedApiRoom)
   const signals = (summaryQuery.data?.signals || {}) as SignalMap
@@ -441,17 +479,59 @@ export default function Scada() {
 
   const roomStatusClass = (label: string) => {
     const mapped = (roomApiMapping.get(label) || [])[0] || ''
-    if (!mapped) return 'border-slate-200 bg-slate-50 text-slate-500'
-    if (label === room) return 'border-teal-500 bg-teal-50 text-teal-700'
-    return 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+    if (!mapped) return 'is-unmapped'
+    if (label === room) return 'is-selected'
+    return 'is-ready'
+  }
+
+  const roomIndicatorStatus = (label: string): RoomIndicatorStatus => {
+    const mapped = (roomApiMapping.get(label) || [])[0] || ''
+    if (!mapped) return 'off'
+    const summary = summariesByApiRoom.get(mapped)
+    if (!summary) return 'off'
+
+    const roomSignals = (summary.signals || {}) as SignalMap
+    const flowName = pickSignalNameByPatterns(roomSignals, FLOW_SIGNAL_EXACT, FLOW_SIGNAL_INCLUDES)
+    const powerName = pickSignalNameByPatterns(roomSignals, POWER_SIGNAL_EXACT, POWER_SIGNAL_INCLUDES)
+    const flowValue = flowName ? Number(roomSignals[flowName]?.value) : null
+    const powerValue = powerName ? Number(roomSignals[powerName]?.value) : null
+    const hasRealtimeMismatchIssue =
+      label.trim().toUpperCase() === 'SS1' &&
+      Number.isFinite(flowValue as number) &&
+      Number.isFinite(powerValue as number) &&
+      (flowValue as number) > 0.1 &&
+      (powerValue as number) <= 0
+
+    const tsMs = parseTsMs(summary.last_update)
+    const isStale = tsMs == null || Date.now() - tsMs > 60_000
+    if (isStale) return 'warning'
+    if (hasRealtimeMismatchIssue) return 'warning'
+
+    if (!Number.isFinite(powerValue as number)) return 'off'
+    if ((powerValue as number) > 0) {
+      if (!Number.isFinite(flowValue as number) || (flowValue as number) <= 0) return 'warning'
+      return 'active'
+    }
+
+    return 'standby'
   }
 
   const roomStatusText = (label: string) => {
-    const mapped = (roomApiMapping.get(label) || [])[0] || ''
-    if (!mapped) return 'n/d'
-    if (label === room) return 'active'
-    return 'ready'
+    const status = roomIndicatorStatus(label)
+    if (status === 'active') return 'ACTIVE'
+    if (status === 'standby') return 'STANDBY'
+    if (status === 'warning') return 'WARNING'
+    return 'OFF'
   }
+
+  const roomBadgeClass = (label: string) => {
+    const status = roomIndicatorStatus(label)
+    if (status === 'active') return 'is-active'
+    if (status === 'standby') return 'is-standby'
+    if (status === 'warning') return 'is-warning'
+    return 'is-off'
+  }
+  const selectedRoomIndicatorStatus = room ? roomIndicatorStatus(room) : 'off'
   const pageTitle = `${site}${room ? ` - SALA ${room}` : ''}`
 
   return (
@@ -471,56 +551,62 @@ export default function Scada() {
       selectorPlaceholder="Select site"
       scadaPlant={selectedApiRoom || room}
     >
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <Card className="h-full">
+      <div className="scada-page">
+        <div className="scada-page-grid">
+          <Card className="scada-rooms-card h-full">
             <CardHeader>
-              <CardTitle className="text-slate-900">Sale {site}</CardTitle>
+              <CardTitle className="text-slate-900">SALE</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {rooms.map((label, index) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => {
-                      setRoom(label)
-                      navigate(`/scada/${label}`)
-                    }}
-                    className={[
-                      'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm',
-                      roomStatusClass(label),
-                    ].join(' ')}
-                  >
-                    <span>{`${index + 1}. ${label}`}</span>
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                      {roomStatusText(label)}
-                    </span>
-                  </button>
-                ))}
+            <CardContent className="scada-rooms-content">
+              <div className="scada-room-list">
+                {rooms.map((label, index) => {
+                  const rowClass = roomStatusClass(label)
+                  const badgeClass = roomBadgeClass(label)
+                  const statusText = roomStatusText(label)
+                  return (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => {
+                        setRoom(label)
+                        navigate(`/scada/${label}`)
+                      }}
+                      className={`scada-room-row ${rowClass}`}
+                    >
+                      <span>{`${index + 1}. ${label}`}</span>
+                      <span className={`scada-room-badge ${badgeClass}`}>
+                        <span className={`scada-room-badge-dot ${badgeClass}`} aria-hidden="true" />
+                        {statusText}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
             </CardContent>
           </Card>
 
-          <div className="min-w-0">
+          <div className="scada-shell-panel min-w-0">
             {selectedApiRoom ? (
-              <ScadaSala
-                title={`SCADA Sala ${room}`}
-                lastUpdate={lastUpdate}
-                dryerImageUrl="/images/scada/essiccatore.png"
-                machines={roomMachines}
-                instruments={{
-                  totalKw: Number.isFinite(powerValue as number) ? Number(powerValue) : 0,
-                  cs: Number.isFinite(csValue as number) ? Number(csValue) : 0,
-                  dewPoint: Number.isFinite(dewValue as number) ? Number(dewValue) : 0,
-                  pressure: Number.isFinite(pressureValue as number) ? Number(pressureValue) : 0,
-                  flow: Number.isFinite(flowValue as number) ? Number(flowValue) : 0,
-                  temp: Number.isFinite(tempValue as number) ? Number(tempValue) : 0,
-                }}
-                onStart={canControl ? (machineId) => handleMachineCommand(machineId, 'START') : undefined}
-                onStop={canControl ? (machineId) => handleMachineCommand(machineId, 'STOP') : undefined}
-                onClose={() => navigate('/dashboard')}
-              />
+              <div className="scada-shell-frame">
+                <ScadaSala
+                  title={`SCADA Sala ${room}`}
+                  lastUpdate={lastUpdate}
+                  dryerImageUrl="/images/scada/essiccatore.png"
+                  machines={roomMachines}
+                  roomStatus={selectedRoomIndicatorStatus}
+                  instruments={{
+                    totalKw: Number.isFinite(powerValue as number) ? Number(powerValue) : 0,
+                    cs: Number.isFinite(csValue as number) ? Number(csValue) : 0,
+                    dewPoint: Number.isFinite(dewValue as number) ? Number(dewValue) : 0,
+                    pressure: Number.isFinite(pressureValue as number) ? Number(pressureValue) : 0,
+                    flow: Number.isFinite(flowValue as number) ? Number(flowValue) : 0,
+                    temp: Number.isFinite(tempValue as number) ? Number(tempValue) : 0,
+                  }}
+                  onStart={canControl ? (machineId) => handleMachineCommand(machineId, 'START') : undefined}
+                  onStop={canControl ? (machineId) => handleMachineCommand(machineId, 'STOP') : undefined}
+                  onClose={() => navigate('/dashboard')}
+                />
+              </div>
             ) : (
               <Card>
                 <CardContent className="py-8 text-sm text-slate-500">
