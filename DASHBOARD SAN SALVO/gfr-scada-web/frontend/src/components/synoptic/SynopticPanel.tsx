@@ -541,7 +541,6 @@ export default function SynopticPanel({
             <text x={dataX + 22} y={dataY + 95} fontSize={11} fill={tone.text} fontWeight={700}>{statusLabelCompact(machine?.status || 'offline')}</text>
             <foreignObject x={dataX + 12} y={dataY + 122} width={dataW - 24} height={38}>
               <div
-                xmlns="http://www.w3.org/1999/xhtml"
                 style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-start' }}
               >
                 <button

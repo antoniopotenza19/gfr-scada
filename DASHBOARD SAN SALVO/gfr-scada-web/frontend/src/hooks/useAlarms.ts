@@ -10,8 +10,8 @@ export function useAlarms(plant: string, from?: string, to?: string, room?: stri
     staleTime: 5_000,
     cacheTime: 120_000,
     retry: 1,
-    refetchInterval: 15_000,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
   })

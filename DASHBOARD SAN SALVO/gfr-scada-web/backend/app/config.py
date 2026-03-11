@@ -33,12 +33,16 @@ def load_settings() -> Settings:
     origins_raw = os.getenv('CORS_ALLOW_ORIGINS', 'http://localhost:5173')
     cors_origins = _split_csv(origins_raw)
     ingest_plants_raw = os.getenv('INGEST_PLANTS', '')
+    ingest_poll_seconds_raw = (
+        os.getenv('SCADA_POLL_SECONDS', '').strip()
+        or os.getenv('INGEST_POLL_SECONDS', '5').strip()
+    )
 
     return Settings(
         app_env=app_env,
         cors_allow_origins=cors_origins,
         base_csv_url=os.getenv('BASE_CSV_URL', 'http://94.138.172.234:46812/shared').rstrip('/'),
-        ingest_poll_seconds=max(1, int(os.getenv('INGEST_POLL_SECONDS', '5'))),
+        ingest_poll_seconds=max(1, int(ingest_poll_seconds_raw)),
         ingest_autostart=os.getenv('INGEST_AUTOSTART', 'true').lower() == 'true',
         ingest_plants=_split_csv(ingest_plants_raw),
         ingest_source_timezone=os.getenv('INGEST_SOURCE_TIMEZONE', 'Europe/Rome').strip() or 'Europe/Rome',

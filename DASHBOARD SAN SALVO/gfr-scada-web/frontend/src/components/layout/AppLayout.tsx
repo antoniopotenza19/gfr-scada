@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { usePlants } from '../../hooks/usePlants'
 import { canViewDevFeatures, getAuthUserFromSessionToken } from '../../utils/auth'
+import { clearSelectedSiteId } from '../../utils/siteSelection'
 import './app-layout.css'
 
 interface AppLayoutProps {
@@ -12,6 +13,7 @@ interface AppLayoutProps {
   selectorOptions?: string[]
   selectorPlaceholder?: string
   scadaPlant?: string
+  navigationLocked?: boolean
   children: ReactNode
 }
 
@@ -58,8 +60,8 @@ function NavGlyph({ kind }: { kind: SidebarIcon }) {
   )
 }
 
-function SidebarLink({ item }: { item: SidebarItem }) {
-  if (!item.to) {
+function SidebarLink({ item, disabled = false }: { item: SidebarItem; disabled?: boolean }) {
+  if (!item.to || disabled) {
     return (
       <span className="app-shell-nav-item is-disabled">
         <span className="app-shell-nav-icon" aria-hidden="true"><NavGlyph kind={item.icon} /></span>
@@ -87,6 +89,7 @@ export default function AppLayout({
   selectorOptions,
   selectorPlaceholder = 'Select plant',
   scadaPlant,
+  navigationLocked = false,
   children,
 }: AppLayoutProps) {
   const navigate = useNavigate()
@@ -106,6 +109,7 @@ export default function AppLayout({
 
   const handleLogout = () => {
     sessionStorage.removeItem('gfr_token')
+    clearSelectedSiteId()
     navigate('/login')
   }
 
@@ -125,15 +129,22 @@ export default function AppLayout({
     <div className="app-shell">
       <aside className="app-shell-sidebar">
         <div className="app-shell-brand">
-          <Link to="/dashboard" className="app-shell-brand-link">
-            <div className="app-shell-brand-title">GFR Engineering</div>
-            <div className="app-shell-brand-subtitle">Energy Saving</div>
-          </Link>
+          {navigationLocked ? (
+            <div className="app-shell-brand-link is-disabled">
+              <div className="app-shell-brand-title">GFR Engineering</div>
+              <div className="app-shell-brand-subtitle">Energy Saving</div>
+            </div>
+          ) : (
+            <Link to="/dashboard" className="app-shell-brand-link">
+              <div className="app-shell-brand-title">GFR Engineering</div>
+              <div className="app-shell-brand-subtitle">Energy Saving</div>
+            </Link>
+          )}
         </div>
 
         <nav className="app-shell-nav">
           {items.map((item) => (
-            <SidebarLink key={item.label} item={item} />
+            <SidebarLink key={item.label} item={item} disabled={navigationLocked && item.icon !== 'plants'} />
           ))}
         </nav>
 

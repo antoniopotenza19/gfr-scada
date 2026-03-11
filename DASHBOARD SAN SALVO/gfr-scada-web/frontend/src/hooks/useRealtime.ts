@@ -1,12 +1,14 @@
 ﻿import { useEffect, useRef } from 'react'
 
+import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
+
 type RealtimeOptions = {
   onEvent: (evt: any) => void
   onPollFallback?: () => void
   pollMs?: number
 }
 
-export function useRealtime({ onEvent, onPollFallback, pollMs = 10000 }: RealtimeOptions) {
+export function useRealtime({ onEvent, onPollFallback, pollMs = LIVE_SUMMARY_REFRESH_MS }: RealtimeOptions) {
   const pollRef = useRef<number | null>(null)
 
   useEffect(() => {

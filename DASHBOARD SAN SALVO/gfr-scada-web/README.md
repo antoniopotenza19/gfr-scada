@@ -2,6 +2,70 @@
 
 Monorepo SCADA: FastAPI backend + Timescale/Postgres + React/Vite frontend.
 
+## Avvio rapido
+
+Da root repository, per rialzare tutto dopo aver chiuso:
+
+```powershell
+.\start-dev.cmd
+```
+
+Alternativa da PowerShell:
+
+```powershell
+npm.cmd start
+```
+
+Il comando:
+- ferma eventuali container esistenti
+- rialza `db` e `backend`
+- aspetta che il DB sia sano
+- esegue migrazioni e seed
+- apre il frontend Vite in una nuova finestra PowerShell
+
+Prerequisito: Docker Desktop deve essere aperto e con engine attivo.
+
+Varianti utili:
+
+```powershell
+npm.cmd run start:no-seed
+npm.cmd run start:no-frontend
+```
+
+## Avvio locale con DB via VPN
+
+Quando vuoi usare backend e frontend locali contro un database raggiungibile via VPN:
+
+1. Crea `.env.vpn` partendo da `.env.vpn.example`
+2. Imposta `DATABASE_URL` con host/IP raggiungibile via VPN
+3. Connetti la VPN
+4. Avvia:
+
+```powershell
+.\start-vpn.cmd
+```
+
+Alternativa:
+
+```powershell
+npm.cmd run start:vpn
+```
+
+Questa modalita:
+- non usa Docker
+- avvia backend locale su `127.0.0.1:8000`
+- avvia frontend locale su `localhost:5173`
+- non esegue migrazioni o seed di default
+
+Comandi opzionali:
+
+```powershell
+npm.cmd run start:vpn:migrate
+npm.cmd run start:vpn:seed
+```
+
+Usa `start:vpn:seed` solo su DB di sviluppo locale o ambienti controllati.
+
 ## Env
 
 1. Copia `.env.example` in `.env`.

@@ -50,7 +50,7 @@ export default function Alarms() {
   const fromDate = date ? new Date(`${date}T00:00:00`) : null
   const fromStr = fromDate ? fromDate.toISOString() : undefined
   const toStr = fromDate ? new Date(fromDate.getTime() + 24 * 60 * 60 * 1000).toISOString() : undefined
-  const { data: alarms, isLoading } = useAlarms(plant, fromStr, toStr)
+  const { data: alarms, isLoading, isFetching, refetch } = useAlarms(plant, fromStr, toStr)
   const scadaFallbackPlant = plant || allowedPlants[0] || ''
 
   return (
@@ -68,6 +68,16 @@ export default function Alarms() {
           subtitle="Filter by day and plant to review events"
           action={
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  void refetch()
+                }}
+                disabled={!plant || isFetching}
+                className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isFetching ? 'Refreshing...' : 'Refresh'}
+              </button>
               <label className="text-sm text-slate-600" htmlFor="alarms-date">
                 Date
               </label>

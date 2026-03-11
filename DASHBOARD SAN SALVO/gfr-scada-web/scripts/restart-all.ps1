@@ -19,12 +19,27 @@ function Invoke-CommandStrict {
   }
 }
 
+function Assert-DockerDaemonAvailable {
+  Write-Host "==> Checking Docker daemon" -ForegroundColor Cyan
+  docker info | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw @"
+Docker Desktop risulta non avviato oppure il motore Linux non e disponibile.
+
+Apri Docker Desktop, aspetta che mostri lo stato 'Engine running', poi rilancia:
+  .\start-dev.cmd
+"@
+  }
+}
+
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $root
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   throw "Docker CLI not found in PATH."
 }
+
+Assert-DockerDaemonAvailable
 
 if (-not (Test-Path ".\frontend\package.json")) {
   throw "frontend/package.json not found. Run this script from the repository."

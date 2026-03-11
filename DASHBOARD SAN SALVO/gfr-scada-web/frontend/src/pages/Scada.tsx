@@ -7,11 +7,13 @@ import AppLayout from '../components/layout/AppLayout'
 import type { ScadaMachine, ScadaMachineStatus } from '../components/synoptic/ScadaSala'
 import ScadaSala from '../components/synoptic/ScadaSala'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
-import { usePlantSummary } from '../hooks/usePlantSummary'
 import { usePlants } from '../hooks/usePlants'
+import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
 import { SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId } from '../constants/sites'
 import { canRemoteControl, canViewDevFeatures, canViewSite, getAuthUserFromSessionToken } from '../utils/auth'
+import { buildRoomApiMapping, loadSummaryCache, SUMMARY_CACHE_KEY } from '../utils/liveSummary'
+import { setSelectedSiteId } from '../utils/siteSelection'
 import type { PlantSummary } from '../types/api'
 import './scada-page.css'
 
@@ -29,14 +31,7 @@ const DEW_SIGNAL_INCLUDES = ['dew', 'rugiad']
 const TEMP_SIGNAL_EXACT = ['Temperatura', 'Temperature']
 const TEMP_SIGNAL_INCLUDES = ['temperatur', 'temp']
 
-const ROOM_ALIASES: Record<string, string[]> = {
-  LAMINATO: ['LAMINATI', 'LaminatiAlta', 'LaminatiBassa'],
-  LAMINATI: ['LAMINATO', 'LaminatiAlta', 'LaminatiBassa'],
-  'PRIMO ALTA': ['PRIMOAlta'],
-  'PRIMO BASSA': ['PRIMOBassa'],
-  'SS1 COMPOSIZIONE': ['COMPOSIZIONE'],
-  'SS2 COMPOSIZIONE': ['SS2 Bassa Pressione'],
-}
+const LIVE_WINDOW_MS = 180_000
 
 type ParsedMachine = {
   rawName: string
@@ -286,47 +281,16 @@ function canon(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
-function resolveApiRoomsForLabel(
-  label: string,
-  normalizedPlants: Map<string, string>,
-  canonicalPlants: Map<string, string>
-) {
-  const names = [label, ...(ROOM_ALIASES[label] || [])]
-  const found: string[] = []
-  for (const name of names) {
-    const direct = normalizedPlants.get(norm(name))
-    if (direct) {
-      found.push(direct)
-      continue
-    }
-    const canonical = canonicalPlants.get(canon(name))
-    if (canonical) found.push(canonical)
-  }
-  return Array.from(new Set(found))
-}
-
-function buildRoomApiMapping(
-  labels: string[],
-  normalizedPlants: Map<string, string>,
-  canonicalPlants: Map<string, string>
-) {
-  const mapping = new Map<string, string[]>()
-  for (const label of labels) {
-    const direct = normalizedPlants.get(norm(label)) || canonicalPlants.get(canon(label))
-    if (direct) {
-      mapping.set(label, [direct])
-      continue
-    }
-    const aliases = resolveApiRoomsForLabel(label, normalizedPlants, canonicalPlants)
-    mapping.set(label, aliases)
-  }
-  return mapping
-}
-
 function parseTsMs(ts: string | null | undefined) {
   if (!ts) return null
   const ms = new Date(ts).getTime()
   return Number.isFinite(ms) ? ms : null
+}
+
+function isRecentIso(ts: string | null | undefined, nowMs: number, maxAgeMs: number) {
+  const tsMs = parseTsMs(ts)
+  if (tsMs == null) return false
+  return nowMs - tsMs <= maxAgeMs
 }
 
 type RoomIndicatorStatus = 'active' | 'standby' | 'warning' | 'off'
@@ -367,6 +331,7 @@ export default function Scada() {
 
   const initialSite = siteEntry?.[0] && allowedSites.includes(siteEntry[0]) ? siteEntry[0] : allowedSites[0]
   const [site, setSite] = useState(initialSite)
+  const [summaryCache, setSummaryCache] = useState<Record<string, PlantSummary>>(() => loadSummaryCache())
   const rooms = SITE_ROOMS[site] || []
   const [room, setRoom] = useState(() => {
     const found = rooms.find((item) => item.trim().toUpperCase() === requested.toUpperCase())
@@ -377,6 +342,13 @@ export default function Scada() {
     if (!siteEntry?.[0] || !allowedSites.includes(siteEntry[0])) return
     setSite(siteEntry[0])
   }, [siteEntry, allowedSites])
+
+  useEffect(() => {
+    const siteId = legacyKeyToSiteId(site)
+    if (siteId && canViewSite(authUser, siteId)) {
+      setSelectedSiteId(siteId)
+    }
+  }, [authUser, site])
 
   useEffect(() => {
     if (!rooms.length) {
@@ -395,32 +367,61 @@ export default function Scada() {
     const all = rooms.flatMap((label) => roomApiMapping.get(label) || [])
     return Array.from(new Set(all))
   }, [rooms, roomApiMapping])
+  const currentNowMs = Date.now()
   const siteSummaryQueries = useQueries({
     queries: siteApiRooms.map((apiRoom) => ({
-      queryKey: ['scada-room-summary', site, apiRoom],
+      queryKey: ['site-room-summary', site, apiRoom],
       queryFn: async () => fetchPlantSummary(apiRoom),
-      staleTime: 10_000,
+      staleTime: 1_000,
       cacheTime: 120_000,
       keepPreviousData: true,
-      refetchInterval: 10_000,
+      refetchInterval: LIVE_SUMMARY_REFRESH_MS,
       refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
       retry: 1,
     })),
   })
+  useEffect(() => {
+    setSummaryCache((prev) => {
+      const next = { ...prev }
+      let changed = false
+      siteApiRooms.forEach((apiRoom, index) => {
+        const summary = siteSummaryQueries[index]?.data as PlantSummary | undefined
+        if (!summary) return
+        const prevUpdate = prev[apiRoom]?.last_update || ''
+        if (prevUpdate !== summary.last_update) {
+          next[apiRoom] = summary
+          changed = true
+        }
+      })
+      if (!changed) return prev
+      if (typeof window !== 'undefined') {
+        try {
+          window.sessionStorage.setItem(SUMMARY_CACHE_KEY, JSON.stringify(next))
+        } catch {
+          // Ignore storage failures and keep in-memory cache.
+        }
+      }
+      return next
+    })
+  }, [siteApiRooms, siteSummaryQueries])
   const summariesByApiRoom = useMemo(() => {
-    const map = new Map<string, PlantSummary>()
+    const map = new Map<string, PlantSummary | null>()
     siteApiRooms.forEach((apiRoom, index) => {
-      const summary = siteSummaryQueries[index]?.data as PlantSummary | undefined
-      if (summary) map.set(apiRoom, summary)
+      const live = (siteSummaryQueries[index]?.data as PlantSummary | undefined) || null
+      const cached = summaryCache[apiRoom] || null
+      const freshCached = cached && isRecentIso(cached.last_update, currentNowMs, LIVE_WINDOW_MS) ? cached : null
+      map.set(apiRoom, live || freshCached || null)
     })
     return map
-  }, [siteApiRooms, siteSummaryQueries])
+  }, [siteApiRooms, siteSummaryQueries, summaryCache, currentNowMs])
 
   const selectedApiRoom = (roomApiMapping.get(room) || [])[0] || ''
-  const summaryQuery = usePlantSummary(selectedApiRoom, !!selectedApiRoom)
-  const signals = (summaryQuery.data?.signals || {}) as SignalMap
+  const selectedApiRoomIndex = selectedApiRoom ? siteApiRooms.indexOf(selectedApiRoom) : -1
+  const selectedSiteSummaryQuery = selectedApiRoomIndex >= 0 ? siteSummaryQueries[selectedApiRoomIndex] : undefined
+  const selectedSummary = selectedApiRoom ? summariesByApiRoom.get(selectedApiRoom) || null : null
+  const signals = (selectedSummary?.signals || {}) as SignalMap
 
   const flowSignalName = pickSignalNameByPatterns(signals, FLOW_SIGNAL_EXACT, FLOW_SIGNAL_INCLUDES) || ''
   const powerSignalName = pickSignalNameByPatterns(signals, POWER_SIGNAL_EXACT, POWER_SIGNAL_INCLUDES) || ''
@@ -436,8 +437,8 @@ export default function Scada() {
   const csValue = powerValue != null && flowValue != null && flowValue > 0 ? powerValue / flowValue : null
   const roomMachines = useMemo(() => buildRoomMachines(room, signals), [room, signals])
 
-  const lastUpdate = summaryQuery.data
-    ? new Date(summaryQuery.data.last_update).toLocaleTimeString()
+  const lastUpdate = selectedSummary?.last_update
+    ? new Date(selectedSummary.last_update).toLocaleTimeString()
     : '--'
 
   const siteId = (legacyKeyToSiteId(site) || 'san-salvo') as 'san-salvo' | 'marghera'
@@ -468,14 +469,15 @@ export default function Scada() {
 
   useEffect(() => {
     if (!debugEnabled) return
-    const payload = summaryQuery.data as PlantSummary | undefined
+    const payload = selectedSummary || undefined
     console.debug('[SCADA][summary]', {
-      queryKey: ['plantSummary', selectedApiRoom, null],
-      fetchedAt: summaryQuery.dataUpdatedAt ? new Date(summaryQuery.dataUpdatedAt).toISOString() : null,
+      queryKey: ['site-room-summary', site, selectedApiRoom],
+      refreshMs: LIVE_SUMMARY_REFRESH_MS,
+      fetchedAt: selectedSiteSummaryQuery?.dataUpdatedAt ? new Date(selectedSiteSummaryQuery.dataUpdatedAt).toISOString() : null,
       responseSize: Object.keys(payload?.signals || {}).length,
       lastUpdate: payload?.last_update || null,
     })
-  }, [debugEnabled, selectedApiRoom, summaryQuery.data, summaryQuery.dataUpdatedAt])
+  }, [debugEnabled, site, selectedApiRoom, selectedSummary, selectedSiteSummaryQuery])
 
   const roomStatusClass = (label: string) => {
     const mapped = (roomApiMapping.get(label) || [])[0] || ''

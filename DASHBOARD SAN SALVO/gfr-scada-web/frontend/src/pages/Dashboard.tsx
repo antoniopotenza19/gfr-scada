@@ -11,13 +11,16 @@ import ErrorBoundary from '../components/ui/ErrorBoundary'
 import KpiMetricCard from '../components/ui/KpiMetricCard'
 import Skeleton from '../components/ui/Skeleton'
 import { PLANT_BOOKMARKS, SAN_SALVO_MAP_CENTER } from '../constants/plantMap'
+import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
 import { SITE_LIST, SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId, siteIdToLegacyKey, type SiteId } from '../constants/sites'
-import { fetchPlantSummary, fetchTimeseries } from '../api/plants'
+import { fetchMergedTimeseriesCandidates, fetchPlantSummary, fetchTimeseries } from '../api/plants'
 import { usePlants } from '../hooks/usePlants'
 import type { PlantSummary, TimeseriesPoint } from '../types/api'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
+import { buildRoomApiMapping, loadSummaryCache, SUMMARY_CACHE_KEY } from '../utils/liveSummary'
 import { canViewDevFeatures, canViewSite, getAuthUserFromSessionToken } from '../utils/auth'
+import { getSelectedSiteId, setSelectedSiteId } from '../utils/siteSelection'
 
 type SignalInfo = { value: number; unit: string; ts: string }
 type SignalMap = Record<string, SignalInfo>
@@ -33,24 +36,15 @@ const DEW_SIGNAL_EXACT = ['AT-061', 'Dew Point', 'DewPoint']
 const DEW_SIGNAL_INCLUDES = ['dew', 'rugiad']
 const TEMP_SIGNAL_EXACT = ['Temperatura', 'Temperature']
 const TEMP_SIGNAL_INCLUDES = ['temperatur', 'temp']
+const MONTHLY_VOLUME_SIGNAL_CANDIDATES = ['Flusso TOT', 'Flusso', 'Flow']
+const MONTHLY_ENERGY_SIGNAL_CANDIDATES = ['Potenza Attiva TOT', 'Potenza Attiva', 'Power']
 
 const LIVE_WINDOW_MS = 180_000
 const POWER_HISTORY_MINUTES = 2
 const POWER_ZERO_FALLBACK_MAX_AGE_MS = LIVE_WINDOW_MS
 const POWER_STALE_MAX_AGE_MS = LIVE_WINDOW_MS
-const SUMMARY_CACHE_KEY = 'gfr_dashboard_summary_cache_v1'
+const FALLBACK_POWER_POLL_MS = LIVE_SUMMARY_REFRESH_MS
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) || 'http://127.0.0.1:8000'
-
-const ROOM_ALIASES: Record<string, string[]> = {
-  LAMINATO: ['LAMINATI', 'LaminatiAlta', 'LaminatiBassa'],
-  LAMINATI: ['LAMINATO', 'LaminatiAlta', 'LaminatiBassa'],
-  'PRIMO ALTA': ['PRIMOAlta'],
-  'PRIMO BASSA': ['PRIMOBassa'],
-  'SS1 COMPOSIZIONE': ['COMPOSIZIONE'],
-  'SS2 COMPOSIZIONE': ['SS2 Bassa Pressione'],
-}
-
-const FORCE_UNMAPPED_LABELS = new Set<string>()
 
 const CS_CONTRACT_BY_ROOM: Record<string, number> = {
   BRAVO: 0.103,
@@ -156,60 +150,10 @@ function metricValueAnyFromSummary(summary: PlantSummary | null, type: MetricTyp
   return Number.isFinite(value) ? value : null
 }
 
-function resolveApiRoomsForLabel(
-  label: string,
-  normalizedPlants: Map<string, string>,
-  canonicalPlants: Map<string, string>
-) {
-  const names = [label, ...(ROOM_ALIASES[label] || [])]
-  const found: string[] = []
-  for (const name of names) {
-    const direct = normalizedPlants.get(norm(name))
-    if (direct) {
-      found.push(direct)
-      continue
-    }
-    const canonical = canonicalPlants.get(canon(name))
-    if (canonical) found.push(canonical)
-  }
-  return Array.from(new Set(found))
-}
-
-function buildRoomApiMapping(
-  labels: string[],
-  normalizedPlants: Map<string, string>,
-  canonicalPlants: Map<string, string>
-) {
-  const mapping = new Map<string, string[]>()
-  const assignedPlants = new Set<string>()
-  const unresolved: string[] = []
-
-  for (const label of labels) {
-    if (FORCE_UNMAPPED_LABELS.has(label)) {
-      mapping.set(label, [])
-      continue
-    }
-    const direct = normalizedPlants.get(norm(label)) || canonicalPlants.get(canon(label))
-    if (direct) {
-      mapping.set(label, [direct])
-      assignedPlants.add(direct)
-    } else {
-      unresolved.push(label)
-      mapping.set(label, [])
-    }
-  }
-
-  for (const label of unresolved) {
-    const aliasMatches = resolveApiRoomsForLabel(label, normalizedPlants, canonicalPlants).filter(
-      (plant) => !assignedPlants.has(plant)
-    )
-    if (aliasMatches.length > 0) {
-      mapping.set(label, aliasMatches)
-      aliasMatches.forEach((plant) => assignedPlants.add(plant))
-    }
-  }
-
-  return mapping
+function needsRecentPowerFallback(summary: PlantSummary | null, nowMs: number) {
+  const snapshot = metricSnapshotFromSummary(summary, 'power')
+  if (!snapshot.signal) return false
+  return isStaleSignal(snapshot.ts, nowMs, POWER_STALE_MAX_AGE_MS)
 }
 
 function percent(part: number, total: number) {
@@ -290,17 +234,17 @@ function fillMissingMonths(points: TimeseriesPoint[], fromIso: string, toIso: st
   }))
 }
 
-function loadSummaryCache(): Record<string, PlantSummary> {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = window.sessionStorage.getItem(SUMMARY_CACHE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return {}
-    return parsed as Record<string, PlantSummary>
-  } catch {
-    return {}
-  }
+function filterTimeseriesRange(points: TimeseriesPoint[], fromIso: string, toIso: string): TimeseriesPoint[] {
+  const fromMs = new Date(fromIso).getTime()
+  const toMs = new Date(toIso).getTime()
+  return points.filter((point) => {
+    const tsMs = new Date(point.ts).getTime()
+    return Number.isFinite(tsMs) && tsMs >= fromMs && tsMs <= toMs
+  })
+}
+
+function hasNonZeroPoints(points: TimeseriesPoint[]): boolean {
+  return points.some((point) => Math.abs(Number(point.value) || 0) > 0)
 }
 
 function formatFetchTime(ts: number | undefined) {
@@ -317,13 +261,20 @@ export default function Dashboard() {
   const authUser = getAuthUserFromSessionToken()
   const requestedSiteId = searchParams.get('site')
   const requestedRoom = searchParams.get('room')
+  const selectedSiteId = getSelectedSiteId()
   const allowedSiteOptions = SITE_LIST.filter((siteKey) => {
     const siteId = legacyKeyToSiteId(siteKey)
     return siteId ? canViewSite(authUser, siteId) : false
   })
   const fallbackSite = allowedSiteOptions[0] || SITE_LIST[0]
   const initialSiteFromQuery = siteIdToLegacyKey(requestedSiteId)
-  const initialSite = initialSiteFromQuery && allowedSiteOptions.includes(initialSiteFromQuery) ? initialSiteFromQuery : fallbackSite
+  const initialSiteFromSession = siteIdToLegacyKey(selectedSiteId)
+  const initialSite =
+    initialSiteFromQuery && allowedSiteOptions.includes(initialSiteFromQuery)
+      ? initialSiteFromQuery
+      : initialSiteFromSession && allowedSiteOptions.includes(initialSiteFromSession)
+        ? initialSiteFromSession
+        : fallbackSite
 
   const [summaryCache, setSummaryCache] = useState<Record<string, PlantSummary>>(() => loadSummaryCache())
   const { data: apiPlants } = usePlants()
@@ -340,6 +291,7 @@ export default function Dashboard() {
 
   const [site, setSite] = useState(initialSite)
   const [room, setRoom] = useState(requestedRoom || '')
+  const [enableHistoricalQueries, setEnableHistoricalQueries] = useState(false)
   const tableSectionRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -347,6 +299,13 @@ export default function Dashboard() {
     if (allowedSiteOptions.includes(site)) return
     setSite(allowedSiteOptions[0])
   }, [allowedSiteOptions, site])
+
+  useEffect(() => {
+    const siteId = legacyKeyToSiteId(site)
+    if (siteId && canViewSite(authUser, siteId)) {
+      setSelectedSiteId(siteId)
+    }
+  }, [authUser, site])
 
   const rooms = SITE_ROOMS[site] || []
   const roomApiMapping = useMemo(
@@ -363,18 +322,36 @@ export default function Dashboard() {
     setRoom((prev) => (prev && rooms.includes(prev) ? prev : firstAvailable))
   }, [rooms, roomApiMapping])
 
+  useEffect(() => {
+    setEnableHistoricalQueries(false)
+    if (typeof window === 'undefined') return
+    const timeoutId = window.setTimeout(() => setEnableHistoricalQueries(true), 1200)
+    return () => window.clearTimeout(timeoutId)
+  }, [site])
+
   const selectedApiRoom = (roomApiMapping.get(room) || [])[0] || ''
   const currentNowMs = Date.now()
   const debugEnabled = Boolean(import.meta.env.DEV) && canViewDevFeatures(authUser)
   const queryDebugSeenRef = useRef<Record<string, number>>({})
 
-  const monthlyFrom = useMemo(() => {
-    const start = new Date()
-    start.setFullYear(start.getFullYear() - 1)
-    start.setHours(0, 0, 0, 0)
-    return start.toISOString()
+  const monthlyRange = useMemo(() => {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = now.getMonth()
+    const startYear = month >= 10 ? year : year - 1
+    const from = new Date(Date.UTC(startYear, 10, 1, 0, 0, 0))
+    const to = new Date(Date.UTC(year, month, now.getDate(), 23, 59, 59))
+    return {
+      from: from.toISOString(),
+      to: to.toISOString(),
+      fallbackTo: to.toISOString(),
+      hasClosedMonth: true,
+    }
   }, [])
-  const monthlyTo = useMemo(() => new Date().toISOString(), [])
+  const monthlyFrom = monthlyRange.from
+  const monthlyTo = monthlyRange.to
+  const monthlyFallbackTo = monthlyRange.fallbackTo
+  const monthlyHasClosedMonth = monthlyRange.hasClosedMonth
   const siteApiRooms = useMemo(() => {
     const all = rooms.flatMap((label) => roomApiMapping.get(label) || [])
     return Array.from(new Set(all))
@@ -387,7 +364,7 @@ export default function Dashboard() {
       staleTime: 1_000,
       cacheTime: 120_000,
       keepPreviousData: true,
-      refetchInterval: 10_000,
+      refetchInterval: LIVE_SUMMARY_REFRESH_MS,
       refetchIntervalInBackground: true,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
@@ -466,14 +443,16 @@ export default function Dashboard() {
   const recentPowerQueries = useQueries({
     queries: siteApiRooms.map((apiRoom) => {
       const signalName = powerSignalByApiRoom.get(apiRoom) || null
+      const summary = summaryByApiRoom.get(apiRoom) || null
+      const shouldFetchFallback = Boolean(signalName) && needsRecentPowerFallback(summary, currentNowMs)
       return {
         queryKey: ['site-recent-power', site, apiRoom, signalName, POWER_HISTORY_MINUTES],
         queryFn: () =>
           signalName ? fetchTimeseries(apiRoom, signalName, undefined, undefined, undefined, POWER_HISTORY_MINUTES, 120) : Promise.resolve([]),
-        enabled: Boolean(signalName),
+        enabled: shouldFetchFallback,
         staleTime: 5_000,
         cacheTime: 120_000,
-        refetchInterval: 15_000,
+        refetchInterval: FALLBACK_POWER_POLL_MS,
         refetchIntervalInBackground: true,
         refetchOnWindowFocus: true,
         refetchOnReconnect: true,
@@ -496,22 +475,32 @@ export default function Dashboard() {
     queries: siteApiRooms.map((apiRoom) => {
       const summary = summaryByApiRoom.get(apiRoom)
       const signalsMap = summary?.signals || {}
-      const signalName =
-        pickSignalNameByPatterns(signalsMap, ['Flusso TOT', 'Flusso', 'Flow'], ['flusso tot', 'flusso 7 barg', 'flusso', 'flow', 'portat', 'nm3']) ||
+      const currentSignal =
+        pickSignalNameByPatterns(signalsMap, MONTHLY_VOLUME_SIGNAL_CANDIDATES, ['flusso tot', 'flusso 7 barg', 'flusso', 'flow', 'portat', 'nm3']) ||
         null
+      const signalCandidates = currentSignal
+        ? [currentSignal, ...MONTHLY_VOLUME_SIGNAL_CANDIDATES.filter((item) => item !== currentSignal)]
+        : MONTHLY_VOLUME_SIGNAL_CANDIDATES
       return {
-        queryKey: ['site-monthly-volume', site, apiRoom, signalName, monthlyFrom, monthlyTo],
+        queryKey: ['site-monthly-volume', site, apiRoom, signalCandidates.join('|'), monthlyFrom, monthlyTo],
         queryFn: () =>
-          signalName
-            ? fetchTimeseries(apiRoom, signalName, monthlyFrom, monthlyTo, '1 month', undefined, 240, 'sum')
-            : Promise.resolve([]),
-        enabled: Boolean(signalName),
-        staleTime: 30_000,
-        cacheTime: 120_000,
-        refetchInterval: 30_000,
-        refetchIntervalInBackground: true,
-        refetchOnWindowFocus: true,
-        refetchOnReconnect: true,
+          fetchMergedTimeseriesCandidates(
+            apiRoom,
+            signalCandidates,
+            monthlyFrom,
+            monthlyFallbackTo,
+            '1 month',
+            undefined,
+            240,
+            'sum'
+          ),
+        enabled: enableHistoricalQueries && signalCandidates.length > 0,
+        staleTime: 10 * 60_000,
+        cacheTime: 30 * 60_000,
+        refetchInterval: false,
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         retry: 1,
       }
     }),
@@ -521,22 +510,32 @@ export default function Dashboard() {
     queries: siteApiRooms.map((apiRoom) => {
       const summary = summaryByApiRoom.get(apiRoom)
       const signalsMap = summary?.signals || {}
-      const signalName =
-        pickSignalNameByPatterns(signalsMap, ['Potenza Attiva TOT', 'Potenza Attiva', 'Power'], ['potenza attiva tot', 'potenza attiva', 'power', 'kw']) ||
+      const currentSignal =
+        pickSignalNameByPatterns(signalsMap, MONTHLY_ENERGY_SIGNAL_CANDIDATES, ['potenza attiva tot', 'potenza attiva', 'power', 'kw']) ||
         null
+      const signalCandidates = currentSignal
+        ? [currentSignal, ...MONTHLY_ENERGY_SIGNAL_CANDIDATES.filter((item) => item !== currentSignal)]
+        : MONTHLY_ENERGY_SIGNAL_CANDIDATES
       return {
-        queryKey: ['site-monthly-energy', site, apiRoom, signalName, monthlyFrom, monthlyTo],
+        queryKey: ['site-monthly-energy', site, apiRoom, signalCandidates.join('|'), monthlyFrom, monthlyTo],
         queryFn: () =>
-          signalName
-            ? fetchTimeseries(apiRoom, signalName, monthlyFrom, monthlyTo, '1 month', undefined, 240, 'sum')
-            : Promise.resolve([]),
-        enabled: Boolean(signalName),
-        staleTime: 30_000,
-        cacheTime: 120_000,
-        refetchInterval: 30_000,
-        refetchIntervalInBackground: true,
-        refetchOnWindowFocus: true,
-        refetchOnReconnect: true,
+          fetchMergedTimeseriesCandidates(
+            apiRoom,
+            signalCandidates,
+            monthlyFrom,
+            monthlyFallbackTo,
+            '1 month',
+            undefined,
+            240,
+            'sum'
+          ),
+        enabled: enableHistoricalQueries && signalCandidates.length > 0,
+        staleTime: 10 * 60_000,
+        cacheTime: 30 * 60_000,
+        refetchInterval: false,
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
         retry: 1,
       }
     }),
@@ -561,11 +560,12 @@ export default function Dashboard() {
     const payload = selectedSiteSummaryQuery?.data as PlantSummary | undefined
     console.debug('[Dashboard][query]', {
       kind: 'selected-summary',
-      queryKey: ['plantSummary', selectedApiRoom, null],
+      queryKey: ['site-room-summary', site, selectedApiRoom],
+      refreshMs: LIVE_SUMMARY_REFRESH_MS,
       lastFetchTime: new Date(updatedAt).toISOString(),
       responseSize: Object.keys(payload?.signals || {}).length,
     })
-  }, [debugEnabled, selectedApiRoom, selectedSiteSummaryQuery])
+  }, [debugEnabled, site, selectedApiRoom, selectedSiteSummaryQuery])
 
   useEffect(() => {
     if (!debugEnabled) return
@@ -579,6 +579,7 @@ export default function Dashboard() {
       console.debug('[Dashboard][query]', {
         kind: 'site-summary',
         queryKey: ['site-room-summary', site, apiRoom],
+        refreshMs: LIVE_SUMMARY_REFRESH_MS,
         lastFetchTime: new Date(updatedAt).toISOString(),
         responseSize: Object.keys(payload?.signals || {}).length,
       })
@@ -778,16 +779,36 @@ export default function Dashboard() {
   const topPressureValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.pressureAvg.toFixed(1) : '--'
   const topDewValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.dewAvg.toFixed(1) : '--'
   const ss1RealtimeIssue = Boolean(selectedRow?.hasRealtimeMismatchIssue)
-  const monthlyVolumeData = fillMissingMonths(
-    aggregateMonthlyPoints(monthlyVolumeQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])),
+  const monthlyVolumeAllData = aggregateMonthlyPoints(
+    monthlyVolumeQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])
+  )
+  const monthlyEnergyAllData = aggregateMonthlyPoints(
+    monthlyEnergyQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])
+  )
+  const monthlyVolumePreferred = fillMissingMonths(
+    filterTimeseriesRange(monthlyVolumeAllData, monthlyFrom, monthlyTo),
     monthlyFrom,
     monthlyTo
   )
-  const monthlyEnergyData = fillMissingMonths(
-    aggregateMonthlyPoints(monthlyEnergyQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])),
+  const monthlyEnergyPreferred = fillMissingMonths(
+    filterTimeseriesRange(monthlyEnergyAllData, monthlyFrom, monthlyTo),
     monthlyFrom,
     monthlyTo
   )
+  const monthlyVolumeFallback = fillMissingMonths(
+    monthlyVolumeAllData,
+    monthlyFrom,
+    monthlyFallbackTo
+  )
+  const monthlyEnergyFallback = fillMissingMonths(
+    monthlyEnergyAllData,
+    monthlyFrom,
+    monthlyFallbackTo
+  )
+  const monthlyVolumeUsesFallback = !hasNonZeroPoints(monthlyVolumePreferred) && hasNonZeroPoints(monthlyVolumeFallback)
+  const monthlyEnergyUsesFallback = !hasNonZeroPoints(monthlyEnergyPreferred) && hasNonZeroPoints(monthlyEnergyFallback)
+  const monthlyVolumeData = monthlyVolumeUsesFallback ? monthlyVolumeFallback : monthlyVolumePreferred
+  const monthlyEnergyData = monthlyEnergyUsesFallback ? monthlyEnergyFallback : monthlyEnergyPreferred
   const monthlyChartsLoading =
     monthlyVolumeQueries.some((q) => q.isLoading) || monthlyEnergyQueries.some((q) => q.isLoading)
 
@@ -831,7 +852,7 @@ export default function Dashboard() {
     }
     return states
   }, [roomRows, rooms, currentNowMs])
-  const selectedSiteId = (legacyKeyToSiteId(site) || 'san-salvo') as SiteId
+  const currentSiteId: SiteId = legacyKeyToSiteId(site) || 'san-salvo'
 
   const selectRoomAndScrollToTable = (nextRoom: string) => {
     setRoom(nextRoom)
@@ -1005,7 +1026,7 @@ export default function Dashboard() {
             rows={plantRows}
             selectedSala={room}
             onSelectSala={setRoom}
-            siteId={selectedSiteId}
+            siteId={currentSiteId}
           />
         </div>
 
@@ -1015,13 +1036,19 @@ export default function Dashboard() {
               <CardTitle className="text-slate-900">Volume prodotto per Mese Nm3 (Impianto Totale)</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="mb-2 text-sm text-slate-500">Somma mensile delle sale disponibili nell'ultimo anno.</p>
+              <p className="mb-2 text-sm text-slate-500">
+                {monthlyVolumeUsesFallback
+                  ? 'Somma mensile delle sale disponibili da novembre fino a oggi.'
+                  : 'Somma mensile delle sale disponibili da novembre fino a oggi.'}
+              </p>
               {monthlyChartsLoading ? (
                 <Skeleton className="h-72 w-full" />
-              ) : monthlyVolumeData.length > 0 ? (
+              ) : monthlyHasClosedMonth && monthlyVolumeData.length > 0 ? (
                 <BarMetricChart data={monthlyVolumeData} barColor="#0f766e" xMode="month" />
               ) : (
-                <div className="text-sm text-slate-500">Dati mensili non disponibili per questo impianto.</div>
+                <div className="text-sm text-slate-500">
+                  Dati mensili non disponibili per questo impianto.
+                </div>
               )}
             </CardContent>
           </Card>
@@ -1030,13 +1057,19 @@ export default function Dashboard() {
               <CardTitle className="text-slate-900">Energia consumata per Mese kWh (Impianto Totale)</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="mb-2 text-sm text-slate-500">Somma mensile delle sale disponibili nell'ultimo anno.</p>
+              <p className="mb-2 text-sm text-slate-500">
+                {monthlyEnergyUsesFallback
+                  ? 'Somma mensile delle sale disponibili da novembre fino a oggi.'
+                  : 'Somma mensile delle sale disponibili da novembre fino a oggi.'}
+              </p>
               {monthlyChartsLoading ? (
                 <Skeleton className="h-72 w-full" />
-              ) : monthlyEnergyData.length > 0 ? (
+              ) : monthlyHasClosedMonth && monthlyEnergyData.length > 0 ? (
                 <BarMetricChart data={monthlyEnergyData} barColor="#0284c7" xMode="month" />
               ) : (
-                <div className="text-sm text-slate-500">Dati mensili non disponibili per questo impianto.</div>
+                <div className="text-sm text-slate-500">
+                  Dati mensili non disponibili per questo impianto.
+                </div>
               )}
             </CardContent>
           </Card>

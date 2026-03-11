@@ -1,18 +1,19 @@
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import AppLayout from '../components/layout/AppLayout'
 import PlantGeoMap from '../components/PlantGeoMap'
 import { Card, CardContent } from '../components/ui/Card'
 import { SAN_SALVO_MAP_CENTER } from '../constants/plantMap'
 import { legacyKeyToSiteId, SITES, type SiteId } from '../constants/sites'
 import { canViewSite, getAuthUserFromSessionToken } from '../utils/auth'
+import { setSelectedSiteId } from '../utils/siteSelection'
 
-function SiteCard({ siteId }: { siteId: SiteId }) {
+function SiteCard({ siteId, onSelect }: { siteId: SiteId; onSelect: (siteId: SiteId) => void }) {
   const site = SITES.find((item) => item.id === siteId)
   if (!site) return null
 
   return (
-    <Link to={`/dashboard?site=${site.id}`} className="block">
+    <button type="button" onClick={() => onSelect(site.id)} className="block w-full text-left">
       <Card className="overflow-hidden transition hover:-translate-y-0.5 hover:shadow-md">
         <div className="h-64 overflow-hidden border-b border-slate-200 bg-slate-100">
           <div className="h-full pointer-events-none [&_.leaflet-control-container]:hidden">
@@ -31,7 +32,7 @@ function SiteCard({ siteId }: { siteId: SiteId }) {
           <div className="text-lg font-semibold text-slate-900">{site.name}</div>
         </CardContent>
       </Card>
-    </Link>
+    </button>
   )
 }
 
@@ -47,7 +48,13 @@ export default function Sites() {
   }
 
   if (visibleSites.length === 1) {
+    setSelectedSiteId(visibleSites[0].id)
     return <Navigate to={`/dashboard?site=${visibleSites[0].id}`} replace />
+  }
+
+  const handleSelectSite = (siteId: SiteId) => {
+    setSelectedSiteId(siteId)
+    navigate(`/dashboard?site=${siteId}`)
   }
 
   return (
@@ -58,11 +65,13 @@ export default function Sites() {
       onPlantChange={(nextSite) => {
         setSelectedSite(nextSite)
         const siteId = legacyKeyToSiteId(nextSite)
-        if (siteId) navigate(`/dashboard?site=${siteId}`)
+        if (!siteId) return
+        handleSelectSite(siteId)
       }}
       selectorOptions={selectorOptions}
       selectorPlaceholder="Seleziona impianto"
       scadaPlant=""
+      navigationLocked={!selectedSite}
     >
       <div className="mx-auto w-full max-w-6xl">
         {visibleSites.length === 0 ? (
@@ -72,7 +81,7 @@ export default function Sites() {
         ) : (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             {visibleSites.map((site) => (
-              <SiteCard key={site.id} siteId={site.id} />
+              <SiteCard key={site.id} siteId={site.id} onSelect={handleSelectSite} />
             ))}
           </div>
         )}

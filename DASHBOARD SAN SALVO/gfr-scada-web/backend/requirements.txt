@@ -12,3 +12,4 @@ python-dotenv
 httpx
 PyJWT
 requests
+PyMySQL

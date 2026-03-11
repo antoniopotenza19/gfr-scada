@@ -1,6 +1,23 @@
 __pycache__/
+**/__pycache__/
 *.pyc
 venv/
-.env
 dist/
 node_modules/
+
+# env files
+.env
+.env.*
+
+# runtime debug
+*.status.json
+schema_debug.json
+schema_debug.md
+
+# local database
+*.db
+*.sqlite
+local_legacy.db
+
+# logs
+*.log

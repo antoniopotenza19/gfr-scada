@@ -63,6 +63,11 @@
   display: block;
 }
 
+.app-shell-brand-link.is-disabled {
+  pointer-events: none;
+  cursor: default;
+}
+
 .app-shell-brand-title {
   font-size: 28px;
   font-weight: 600;
@@ -121,6 +126,7 @@
 
 .app-shell-nav-item.is-disabled {
   opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .app-shell-nav-icon {

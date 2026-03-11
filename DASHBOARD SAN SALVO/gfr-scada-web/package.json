@@ -1,4 +1,14 @@
 {
+  "name": "gfr-scada-web",
+  "private": true,
+  "scripts": {
+    "start": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1",
+    "start:no-seed": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1",
+    "start:no-frontend": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local.ps1 -NoFrontend",
+    "start:vpn": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local-vpn.ps1",
+    "start:vpn:migrate": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local-vpn.ps1 -RunMigrations",
+    "start:vpn:seed": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start-local-vpn.ps1 -RunMigrations -RunSeed"
+  },
   "dependencies": {
     "leaflet": "^1.9.4",
     "react-leaflet": "^5.0.0"

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { defaultPathForUser, getAuthUserFromSessionToken } from '../utils/auth'
+import { clearSelectedSiteId } from '../utils/siteSelection'
 
 export default function Login() {
   const [user, setUser] = useState('')
@@ -25,6 +26,7 @@ export default function Login() {
 
     const data = await resp.json()
     if (data.access_token) {
+      clearSelectedSiteId()
       sessionStorage.setItem('gfr_token', data.access_token)
       navigate(defaultPathForUser(getAuthUserFromSessionToken()))
       return

@@ -8,6 +8,7 @@ import SiteDetail from './pages/SiteDetail'
 import NotAuthorized from './pages/NotAuthorized'
 import DevTools from './pages/DevTools'
 import { canViewDevFeatures, canViewSite, defaultPathForUser, getAuthUserFromSessionToken } from './utils/auth'
+import { getSelectedSiteId } from './utils/siteSelection'
 import { isSiteId } from './constants/sites'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
@@ -30,6 +31,14 @@ function RequireDev({ children }: { children: JSX.Element }) {
   return children
 }
 
+function RequireSelectedSite({ children }: { children: JSX.Element }) {
+  const user = getAuthUserFromSessionToken()
+  if (user.allowedSiteIds.length <= 1) return children
+  const selectedSiteId = getSelectedSiteId()
+  if (!selectedSiteId || !canViewSite(user, selectedSiteId)) return <Navigate to="/sites" replace />
+  return children
+}
+
 export default function App() {
   const token = sessionStorage.getItem('gfr_token')
   const authUser = getAuthUserFromSessionToken()
@@ -45,10 +54,10 @@ export default function App() {
       <Route path="/403" element={<RequireAuth><NotAuthorized /></RequireAuth>} />
       <Route path="/sites" element={<RequireAuth><Sites /></RequireAuth>} />
       <Route path="/sites/:siteId" element={<RequireAuth><RequireSiteAccess><SiteDetail /></RequireSiteAccess></RequireAuth>} />
-      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-      <Route path="/scada/:plant" element={<RequireAuth><Scada /></RequireAuth>} />
-      <Route path="/alarms" element={<RequireAuth><Alarms /></RequireAuth>} />
-      <Route path="/dev" element={<RequireAuth><RequireDev><DevTools /></RequireDev></RequireAuth>} />
+      <Route path="/dashboard" element={<RequireAuth><RequireSelectedSite><Dashboard /></RequireSelectedSite></RequireAuth>} />
+      <Route path="/scada/:plant" element={<RequireAuth><RequireSelectedSite><Scada /></RequireSelectedSite></RequireAuth>} />
+      <Route path="/alarms" element={<RequireAuth><RequireSelectedSite><Alarms /></RequireSelectedSite></RequireAuth>} />
+      <Route path="/dev" element={<RequireAuth><RequireSelectedSite><RequireDev><DevTools /></RequireDev></RequireSelectedSite></RequireAuth>} />
       <Route path="*" element={<Navigate to={token ? defaultAuthedPath : '/login'} replace />} />
     </Routes>
   )

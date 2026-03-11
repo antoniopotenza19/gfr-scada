@@ -10,7 +10,7 @@ export const SITE_ROOMS: Record<string, string[]> = {
     'SS1 COMPOSIZIONE',
     'SS2 COMPOSIZIONE',
   ],
-  MARGHERA: ['MARGHERA'],
+  MARGHERA: ['LAM_MP_7BAR', 'LAM_ALTA', 'TAGLIERIA', 'COMP_BP', 'FORNO_EF'],
 }
 
 export const SITE_LIST = Object.keys(SITE_ROOMS)

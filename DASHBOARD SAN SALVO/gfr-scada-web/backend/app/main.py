@@ -8,8 +8,9 @@ from fastapi.staticfiles import StaticFiles
 load_dotenv()
 
 from .config import settings
+from .db.bootstrap import run_legacy_bootstrap
 from .routers import auth, commands, debug, health, ingest, ingest_realtime, plants, realtime, site_commands
-from .services import csv_watcher
+from .services.energysaving_runtime import csv_db_ingestor_service, warm_energysaving_runtime_caches
 
 app = FastAPI(title='gfr-scada-web')
 
@@ -38,13 +39,16 @@ if os.path.isdir(static_dir):
 
 @app.on_event('startup')
 async def startup_ingest_scheduler():
+    if os.getenv("ENABLE_LEGACY_BOOTSTRAP", "false").strip().lower() == "true":
+        run_legacy_bootstrap()
+    warm_energysaving_runtime_caches()
     if settings.ingest_autostart:
-        await csv_watcher.start()
+        await csv_db_ingestor_service.start()
 
 
 @app.on_event('shutdown')
 async def shutdown_ingest_scheduler():
-    await csv_watcher.stop()
+    await csv_db_ingestor_service.stop()
 
 
 @app.get('/')

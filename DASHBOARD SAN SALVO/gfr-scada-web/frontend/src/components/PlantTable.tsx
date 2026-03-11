@@ -272,6 +272,26 @@ function parseSignalTsMs(value: string | null | undefined) {
   return Number.isFinite(ms) ? ms : null
 }
 
+function pickLatestSignalValue(
+  signals: PlantRow['detailSignals'],
+  matcher: (name: string) => boolean
+): number | null {
+  if (!signals) return null
+
+  let best: { value: number; tsMs: number | null } | null = null
+  for (const [name, info] of Object.entries(signals)) {
+    if (!matcher(name)) continue
+    const value = Number(info?.value)
+    if (!Number.isFinite(value)) continue
+    const tsMs = parseSignalTsMs(info?.ts)
+    if (!best || (tsMs != null && (best.tsMs == null || tsMs >= best.tsMs))) {
+      best = { value, tsMs }
+    }
+  }
+
+  return best?.value ?? null
+}
+
 function extractSignalVariants(
   signals: PlantRow['detailSignals'],
   kind: 'pressure' | 'temperature'
@@ -292,8 +312,8 @@ function extractSignalVariants(
     const value = Number(info?.value)
     if (!Number.isFinite(value)) continue
 
-    const indexMatch = name.match(/\((\d+)\)\s*$/)
-    const index = indexMatch ? Number(indexMatch[1]) : 1
+    const indexMatch = name.match(/(?:\((\d+)\)|\b(\d+))\s*$/)
+    const index = indexMatch ? Number(indexMatch[1] || indexMatch[2]) : 1
     const tsMs = parseSignalTsMs(info?.ts)
     const prev = byIndex.get(index)
 
@@ -305,6 +325,20 @@ function extractSignalVariants(
   return Array.from(byIndex.entries())
     .sort((a, b) => a[0] - b[0])
     .map(([, entry]) => entry.value)
+}
+
+function extractSs2FlowSignals(signals: PlantRow['detailSignals']) {
+  const flow1 = pickLatestSignalValue(
+    signals,
+    (name) => /^(flusso(?:\s+1)?|flusso\s+7\s*barg?)$/i.test(name.trim())
+  )
+  const flow2FromDb = pickLatestSignalValue(signals, (name) => /^flusso\s+2$/i.test(name.trim()))
+  const flowTotal = pickLatestSignalValue(
+    signals,
+    (name) => /^(flusso|flusso\s+tot)$/i.test(name.trim())
+  )
+  const flow2 = flow2FromDb ?? (flowTotal != null && flow1 != null ? flowTotal - flow1 : null)
+  return { flow1, flow2, flowTotal }
 }
 
 function statusPill(status: PlantStatus, hasWarning = false) {
@@ -505,6 +539,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                 const pressure2 = pressureVariants[1] ?? null
                 const temperature1 = temperatureVariants[0] ?? row.temperaturaMedia
                 const temperature2 = temperatureVariants[1] ?? null
+                const ss2Flows = extractSs2FlowSignals(row.detailSignals)
                 const updateLabel = row.updateMs == null ? '—' : formatLastUpdateTime(row.lastUpdate)
                 const scadaMachines = buildInlineScadaMachines(row.sala, row.detailSignals)
                 const ss1Warning = row.sala.trim().toUpperCase() === 'SS1' && (row.flowValue ?? 0) > 0.1 && (row.potenzaMedia ?? 0) <= 0
@@ -633,7 +668,17 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
 
                             <PowerMetrics
                               items={[
-                                { label: 'Flusso', unit: 'Nm3/h', value: formatOneDecimal(row.flowValue) },
+                                {
+                                  label: hasDualPressureTemp ? 'Flusso TOT' : 'Flusso',
+                                  unit: 'Nm3/h',
+                                  value: formatOneDecimal(row.flowValue),
+                                },
+                                ...(hasDualPressureTemp
+                                  ? [{ label: 'Flusso 1', unit: 'Nm3/h', value: formatOneDecimal(ss2Flows.flow1) }]
+                                  : []),
+                                ...(hasDualPressureTemp
+                                  ? [{ label: 'Flusso 2', unit: 'Nm3/h', value: formatOneDecimal(ss2Flows.flow2) }]
+                                  : []),
                                 { label: 'Potenza Attiva', unit: 'kW', value: formatOneDecimal(row.potenzaMedia) },
                                 { label: 'CS Attuale', unit: 'kWh/Nm3', value: formatThreeDecimals(row.csPeriodo), highlight: true },
                                 { label: 'CS Contratto', unit: 'kWh/Nm3', value: formatThreeDecimals(row.csContratto) },
