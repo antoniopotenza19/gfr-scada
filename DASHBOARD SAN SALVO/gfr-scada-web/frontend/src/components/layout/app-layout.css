@@ -259,6 +259,25 @@
   line-height: var(--type-title-line);
   letter-spacing: -0.3px;
   text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell-title-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f766e;
+  flex: 0 0 auto;
+}
+
+.app-shell-title-icon svg {
+  width: 24px;
+  height: 24px;
+  display: block;
 }
 
 .app-shell-subtitle {

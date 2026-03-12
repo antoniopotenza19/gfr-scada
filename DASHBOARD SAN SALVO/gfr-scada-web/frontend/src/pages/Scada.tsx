@@ -287,6 +287,18 @@ function parseTsMs(ts: string | null | undefined) {
   return Number.isFinite(ms) ? ms : null
 }
 
+function ChartsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path d="M4 18h16M6 15l4-4 3 2 5-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6" cy="15" r="1.2" fill="currentColor" />
+      <circle cx="10" cy="11" r="1.2" fill="currentColor" />
+      <circle cx="13" cy="13" r="1.2" fill="currentColor" />
+      <circle cx="18" cy="7" r="1.2" fill="currentColor" />
+    </svg>
+  )
+}
+
 function isRecentIso(ts: string | null | undefined, nowMs: number, maxAgeMs: number) {
   const tsMs = parseTsMs(ts)
   if (tsMs == null) return false
@@ -534,7 +546,7 @@ export default function Scada() {
     return 'is-off'
   }
   const selectedRoomIndicatorStatus = room ? roomIndicatorStatus(room) : 'off'
-  const pageTitle = `${site}${room ? ` - SALA ${room}` : ''}`
+  const pageTitle = room ? `SCADA REAL TIME - ${room.toUpperCase()}` : 'SCADA REAL TIME'
 
   return (
     <AppLayout
@@ -556,16 +568,21 @@ export default function Scada() {
     >
       <div className="scada-page">
         <div className="scada-page-grid">
-          <Card className="scada-rooms-card h-full">
+          <Card className="scada-rooms-card">
             <CardHeader>
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <CardTitle className="text-slate-900">SALE</CardTitle>
                 <button
                   type="button"
-                  onClick={() => navigate(`/sale/${encodeURIComponent(selectedApiRoom || room)}/grafici`)}
-                  className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-sm font-semibold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100"
+                  onClick={() =>
+                    navigate(`/sale/${encodeURIComponent(selectedApiRoom || room)}/grafici`, {
+                      state: { resetRange: true },
+                    })
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
                 >
-                  Analisi grafici
+                  <ChartsIcon />
+                  Analizza grafici
                 </button>
               </div>
             </CardHeader>

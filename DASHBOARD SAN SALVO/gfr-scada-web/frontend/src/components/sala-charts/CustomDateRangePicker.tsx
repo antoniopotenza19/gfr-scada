@@ -7,8 +7,6 @@ interface CustomDateRangePickerProps {
   fromValue: string
   toValue: string
   onApplyRange: (fromValue: string, toValue: string) => void
-  onResetRealtime: () => void
-  onRefresh: () => void
   error?: string | null
 }
 
@@ -52,8 +50,7 @@ function formatSummaryDate(value: string) {
     }
   }
   return {
-    day: parsed.toLocaleDateString('it-IT', { day: '2-digit' }),
-    monthYear: parsed.toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+    day: parsed.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' }),
     time: parsed.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
   }
 }
@@ -90,7 +87,7 @@ function normalizeTimeSlot(value: string, fallbackTime: string) {
   const [rawHours = fallbackTime.slice(0, 2), rawMinutes = fallbackTime.slice(3, 5)] = value.split(':')
   const safeHours = Math.min(23, Math.max(0, Number(rawHours || 0)))
   const safeMinutes = Math.min(59, Math.max(0, Number(rawMinutes || 0)))
-  return `${pad(safeHours)}:${safeMinutes}`
+  return `${pad(safeHours)}:${pad(safeMinutes)}`
 }
 
 function normalizeDateTimeValue(value: string, fallbackTime: string) {
@@ -110,10 +107,10 @@ function QuickTimeSelector({ label, value, onChange }: QuickTimeSelectorProps) {
   const [hourValue, minuteValue] = normalizedValue.split(':')
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+    <div className="rounded-2xl border border-slate-200/90 bg-white/90 p-4 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.45)]">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</div>
-        <div className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-700">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+        <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-700">
           {normalizedValue}
         </div>
       </div>
@@ -123,7 +120,7 @@ function QuickTimeSelector({ label, value, onChange }: QuickTimeSelectorProps) {
           <select
             value={hourValue}
             onChange={(event) => onChange(`${event.target.value}:${minuteValue}`)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-teal-400"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-slate-400"
           >
             {HOUR_OPTIONS.map((option) => (
               <option key={option} value={option}>
@@ -138,7 +135,7 @@ function QuickTimeSelector({ label, value, onChange }: QuickTimeSelectorProps) {
           <select
             value={minuteValue}
             onChange={(event) => onChange(`${hourValue}:${event.target.value}`)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-teal-400"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-slate-400"
           >
             {MINUTE_OPTIONS.map((option) => (
               <option key={option} value={option}>
@@ -168,7 +165,7 @@ function QuickTimeSelector({ label, value, onChange }: QuickTimeSelectorProps) {
           )}
         </div>
       </div>
-      <div className="mt-3 text-xs text-slate-500">Step selezione: 1 minuto</div>
+      <div className="mt-3 text-xs text-slate-600">Step selezione: 1 minuto</div>
     </div>
   )
 }
@@ -178,31 +175,29 @@ function RangeSummaryCard({ fromValue, toValue }: { fromValue: string; toValue: 
   const toSummary = formatSummaryDate(toValue)
 
   return (
-    <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-4 py-3 shadow-sm">
-      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Intervallo selezionato</div>
+    <div className="min-w-0 flex-1 rounded-2xl border border-slate-200/90 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-4 py-3.5 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.35)]">
+      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Intervallo attuale</div>
       <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Da</div>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="text-2xl font-semibold leading-none text-slate-900">{fromSummary.day}</span>
-            <span className="truncate text-sm font-medium text-slate-600">{fromSummary.monthYear}</span>
+        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Da</div>
+          <div className="mt-1">
+            <span className="block text-2xl font-bold leading-none tracking-[-0.02em] text-slate-950">{fromSummary.day}</span>
           </div>
-          <div className="mt-1 text-sm font-semibold text-teal-700">{fromSummary.time}</div>
+          <div className="mt-1.5 text-sm font-medium text-slate-700">{fromSummary.time}</div>
         </div>
 
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-[0_10px_20px_-16px_rgba(15,23,42,0.3)]">
           <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
             <path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </div>
 
-        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">A</div>
-          <div className="mt-1 flex items-end gap-2">
-            <span className="text-2xl font-semibold leading-none text-slate-900">{toSummary.day}</span>
-            <span className="truncate text-sm font-medium text-slate-600">{toSummary.monthYear}</span>
+        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">A</div>
+          <div className="mt-1">
+            <span className="block text-2xl font-bold leading-none tracking-[-0.02em] text-slate-950">{toSummary.day}</span>
           </div>
-          <div className="mt-1 text-sm font-semibold text-sky-700">{toSummary.time}</div>
+          <div className="mt-1.5 text-sm font-medium text-slate-700">{toSummary.time}</div>
         </div>
       </div>
     </div>
@@ -213,8 +208,6 @@ export default function CustomDateRangePicker({
   fromValue,
   toValue,
   onApplyRange,
-  onResetRealtime,
-  onRefresh,
   error,
 }: CustomDateRangePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -271,7 +264,7 @@ export default function CustomDateRangePicker({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-[240px] flex-col gap-2">
           <button
@@ -285,32 +278,16 @@ export default function CustomDateRangePicker({
                 return next
               })
             }
-            className="inline-flex min-h-[88px] items-center gap-3 rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-5 py-4 text-left text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+            className="inline-flex min-h-[90px] items-center gap-3 rounded-2xl border border-slate-200/90 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-5 py-4 text-left text-sm font-semibold text-slate-800 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.35)] transition hover:border-slate-300 hover:bg-slate-50"
           >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-teal-200 bg-teal-50 text-teal-600">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500">
               <CalendarIcon />
             </span>
             <span className="flex min-w-0 flex-col">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Range custom</span>
-              <span className="mt-1 text-base font-semibold text-slate-900">Intervallo personalizzato</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Range custom</span>
+              <span className="mt-1 text-base font-semibold text-slate-950">Intervallo personalizzato</span>
             </span>
           </button>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={onResetRealtime}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-            >
-              Reset realtime
-            </button>
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-            >
-              Refresh
-            </button>
-          </div>
         </div>
         <RangeSummaryCard fromValue={fromValue} toValue={toValue} />
       </div>

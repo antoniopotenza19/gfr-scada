@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import {
   Area,
   AreaChart,
@@ -21,6 +23,7 @@ interface MetricPoint {
 interface MetricTrendCardProps {
   metricKey: SalaMetricKey
   title: string
+  icon?: ReactNode
   unit: string
   color: string
   accentClassName: string
@@ -28,6 +31,7 @@ interface MetricTrendCardProps {
   data: MetricPoint[]
   thresholds: ThresholdLine[]
   loading?: boolean
+  currentValue?: number | null
 }
 
 function formatCompact(value: number) {
@@ -50,6 +54,22 @@ function formatAxisValue(value: number, metricKey: SalaMetricKey) {
   }
   if (Math.abs(value) >= 1000) return formatCompact(value)
   return new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 }).format(value)
+}
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+function formatChartAxisTimestamp(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
+}
+
+function formatChartTooltipTimestamp(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`
 }
 
 function computeStats(data: MetricPoint[]) {
@@ -102,6 +122,7 @@ function formatDelta(current: number | null, target: number, metricKey: SalaMetr
 export default function MetricTrendCard({
   metricKey,
   title,
+  icon,
   unit,
   color,
   accentClassName,
@@ -109,11 +130,13 @@ export default function MetricTrendCard({
   data,
   thresholds,
   loading = false,
+  currentValue = null,
 }: MetricTrendCardProps) {
   const chartData = data
     .filter((item) => item.value != null)
     .map((item) => ({ timestamp: item.timestamp, value: Number(item.value) }))
   const stats = computeStats(data)
+  const displayedCurrent = currentValue ?? stats.current
   const gradientId = `gradient-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
   const isConsumoSpecifico = metricKey === 'cons_specifico'
   const highlightedThresholds = metricKey === 'cons_specifico'
@@ -127,7 +150,7 @@ export default function MetricTrendCard({
       <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
         Attuale
       </div>
-      <div className="mt-1 whitespace-nowrap text-sm font-semibold leading-tight text-slate-900">{formatValue(stats.current, unit, metricKey)}</div>
+      <div className="mt-1 whitespace-nowrap text-sm font-semibold leading-tight text-slate-900">{formatValue(displayedCurrent, unit, metricKey)}</div>
       <div className="mt-1 border-t border-white/70 pt-1 text-[11px] leading-tight text-slate-500">
         Media {formatValue(stats.average, unit, metricKey)}
       </div>
@@ -139,13 +162,20 @@ export default function MetricTrendCard({
       <CardHeader className={['min-h-[118px] border-b border-slate-100 bg-gradient-to-br', accentClassName].join(' ')}>
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
-            <CardTitle className="text-slate-900">{title}</CardTitle>
+            <CardTitle className="inline-flex items-center gap-2 text-slate-900">
+              {icon ? (
+                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200/80 bg-white/80 text-slate-500 shadow-sm">
+                  {icon}
+                </span>
+              ) : null}
+              <span>{title}</span>
+            </CardTitle>
           </div>
           <div className={isConsumoSpecifico ? 'flex flex-wrap items-stretch gap-2 xl:max-w-[34rem] xl:flex-nowrap xl:-translate-x-2' : 'flex flex-wrap items-stretch gap-2 xl:max-w-[30rem] xl:flex-nowrap'}>
             {currentCard}
             {highlightedThresholds.map((threshold) => {
-              const tone = metricKey === 'cons_specifico' && threshold.label === 'CS realizzabile' && stats.current != null
-                ? (stats.current <= threshold.value
+              const tone = metricKey === 'cons_specifico' && threshold.label === 'CS realizzabile' && displayedCurrent != null
+                ? (displayedCurrent <= threshold.value
                     ? { badge: 'border-emerald-200 bg-emerald-50 text-emerald-700' }
                     : { badge: 'border-rose-200 bg-rose-50 text-rose-700' })
                 : thresholdToneClasses(threshold.color)
@@ -158,12 +188,12 @@ export default function MetricTrendCard({
                     {threshold.label}
                   </div>
                   <div className="mt-1 whitespace-nowrap text-sm font-semibold leading-tight text-slate-900">{formatValue(threshold.value, unit, metricKey)}</div>
-                  {stats.current != null ? (
+                  {displayedCurrent != null ? (
                     <div className="mt-1 border-t border-white/70 pt-1 text-[11px] leading-tight">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-slate-500">vs attuale</span>
-                        <span className={['font-semibold', thresholdDeltaTone(metricKey, stats.current, threshold)].join(' ')}>
-                          {formatDelta(stats.current, threshold.value, metricKey)} {unit}
+                        <span className={['font-semibold', thresholdDeltaTone(metricKey, displayedCurrent, threshold)].join(' ')}>
+                          {formatDelta(displayedCurrent, threshold.value, metricKey)} {unit}
                         </span>
                       </div>
                     </div>
@@ -194,14 +224,7 @@ export default function MetricTrendCard({
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="timestamp"
-                  tickFormatter={(value: string) =>
-                    new Date(value).toLocaleDateString('it-IT', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  }
+                  tickFormatter={(value: string) => formatChartAxisTimestamp(value)}
                   minTickGap={42}
                   tick={{ fontSize: 11, fill: '#64748b' }}
                   tickMargin={10}
@@ -217,7 +240,7 @@ export default function MetricTrendCard({
                     border: '1px solid #e2e8f0',
                     boxShadow: '0 20px 35px -20px rgba(15,23,42,0.35)',
                   }}
-                  labelFormatter={(value: string) => new Date(value).toLocaleString('it-IT')}
+                  labelFormatter={(value: string) => formatChartTooltipTimestamp(value)}
                   formatter={(value: number) => [formatValue(Number(value), unit, metricKey), title]}
                 />
                 {chartThresholds.map((threshold) => (

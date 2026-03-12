@@ -19,6 +19,22 @@ function formatNumber(value: number | null, fractionDigits: number = 1) {
   return new Intl.NumberFormat('it-IT', { maximumFractionDigits: fractionDigits }).format(value)
 }
 
+function formatDurationMinutes(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return '--'
+
+  const totalMinutes = Math.max(0, Math.round(value))
+  const days = Math.floor(totalMinutes / (24 * 60))
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60)
+  const minutes = totalMinutes % 60
+  const parts: string[] = []
+
+  if (days > 0) parts.push(`${days}g`)
+  if (hours > 0 || days > 0) parts.push(`${hours}h`)
+  parts.push(`${minutes}m`)
+
+  return parts.join(' ')
+}
+
 function barWidth(value: number) {
   return `${Math.max(0, Math.min(100, value))}%`
 }
@@ -58,15 +74,19 @@ export default function CompressorActivityPanel({
           <div className="divide-y divide-slate-100">
             {items.map((item) => (
               <div key={item.id_compressore} className="grid gap-4 p-4 xl:grid-cols-[1.3fr_1fr_0.9fr]">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
+                <div className="grid gap-3 md:grid-cols-[minmax(140px,180px)_96px_210px] md:items-start md:gap-x-5">
+                  <div className="space-y-2">
                     <div className="text-sm font-semibold text-slate-900">{item.code}</div>
+                    <div className="text-sm text-slate-500">{item.name}</div>
+                  </div>
+                  <div className="md:pt-0.5 md:flex md:justify-start">
                     <StatusBadge status={statusToBadge(item.current_state)} />
-                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                  </div>
+                  <div className="md:pt-0.5 md:flex md:justify-start">
+                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600 whitespace-nowrap">
                       Stato dominante: {item.dominant_state}
                     </span>
                   </div>
-                  <div className="text-sm text-slate-500">{item.name}</div>
                 </div>
 
                 <div className="space-y-2">
@@ -82,9 +102,9 @@ export default function CompressorActivityPanel({
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs text-slate-500">
-                    <div>ON {formatNumber(item.minutes_on)} min</div>
-                    <div>STBY {formatNumber(item.minutes_standby)} min</div>
-                    <div>OFF {formatNumber(item.minutes_off)} min</div>
+                    <div>ON {formatDurationMinutes(item.minutes_on)}</div>
+                    <div>STBY {formatDurationMinutes(item.minutes_standby)}</div>
+                    <div>OFF {formatDurationMinutes(item.minutes_off)}</div>
                   </div>
                 </div>
 

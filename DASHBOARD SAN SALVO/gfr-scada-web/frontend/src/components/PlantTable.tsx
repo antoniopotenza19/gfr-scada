@@ -13,6 +13,8 @@ interface PlantTableProps {
   selectedSala: string
   onSelectSala: (sala: string) => void
   siteId: 'san-salvo' | 'marghera'
+  resetToken?: number
+  openSala?: string | null
 }
 
 interface DecoratedPlantRow extends PlantRow {
@@ -50,6 +52,26 @@ const BRAVO_MACHINE_MAP: Array<{ id: string; name: string; aliases: string[]; im
   { id: 'M2', name: 'MATTEI 2', aliases: ['MATTEI N2', 'MATTEI 2', 'M2'], imageUrl: '/images/scada/siadbooster.png' },
   { id: 'V1', name: 'GA90 VSD', aliases: ['GA90 VSD', 'GA90', 'V1'], imageUrl: '/images/scada/crepelle.png' },
 ]
+
+function ScadaIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5">
+      <path d="M4 6h16v10H4zM9 20h6M12 16v4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ChartsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5">
+      <path d="M4 18h16M6 15l4-4 3 2 5-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="6" cy="15" r="1.2" fill="currentColor" />
+      <circle cx="10" cy="11" r="1.2" fill="currentColor" />
+      <circle cx="13" cy="13" r="1.2" fill="currentColor" />
+      <circle cx="18" cy="7" r="1.2" fill="currentColor" />
+    </svg>
+  )
+}
 
 function canonicalToken(value: string) {
   return value.toUpperCase().replace(/N[\u00B0\u00BA]/g, 'N').replace(/[^A-Z0-9]/g, '')
@@ -262,6 +284,21 @@ function formatThreeDecimals(value: number | null) {
   return value.toFixed(3)
 }
 
+function resetAppScrollPosition() {
+  if (typeof window === 'undefined') return
+  window.scrollTo({ top: 0, behavior: 'auto' })
+  document.documentElement.scrollTop = 0
+  document.body.scrollTop = 0
+  document.querySelector<HTMLElement>('.app-shell-main')?.scrollTo({ top: 0, behavior: 'auto' })
+  document.querySelector<HTMLElement>('.app-shell-content')?.scrollTo({ top: 0, behavior: 'auto' })
+}
+
+function csTone(actual: number | null, contract: number | null): 'success' | 'danger' | 'default' {
+  if (typeof actual !== 'number' || !Number.isFinite(actual)) return 'default'
+  if (typeof contract !== 'number' || !Number.isFinite(contract)) return 'default'
+  return actual > contract ? 'danger' : 'success'
+}
+
 function formatPercent(value: number | null) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return '—'
   return `${value.toFixed(1)}%`
@@ -396,7 +433,14 @@ function scadaRoomStatus(status: PlantStatus, hasWarning: boolean): ScadaRoomSta
   return 'off'
 }
 
-export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }: PlantTableProps) {
+export default function PlantTable({
+  rows,
+  selectedSala,
+  onSelectSala,
+  siteId,
+  resetToken = 0,
+  openSala = null,
+}: PlantTableProps) {
   void siteId
   const navigate = useNavigate()
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -404,12 +448,29 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
   const [expandedSala, setExpandedSala] = useState<string | null>(null)
   const [synopticSala, setSynopticSala] = useState<string | null>(null)
   const nowMs = Date.now()
+  const hasExpandedRow = expandedSala !== null
 
   useEffect(() => {
-    if (!selectedSala) return
-    setExpandedSala(selectedSala)
-    setSynopticSala((prev) => (prev === selectedSala ? prev : null))
-  }, [selectedSala])
+    setFilter('all')
+    setSearch('')
+    setExpandedSala(null)
+    setSynopticSala(null)
+  }, [resetToken])
+
+  useEffect(() => {
+    if (!openSala) return
+    setExpandedSala(openSala)
+    setSynopticSala(null)
+  }, [openSala])
+
+  useEffect(() => {
+    if (expandedSala && !rows.some((row) => row.sala === expandedSala)) {
+      setExpandedSala(null)
+    }
+    if (synopticSala && !rows.some((row) => row.sala === synopticSala)) {
+      setSynopticSala(null)
+    }
+  }, [rows, expandedSala, synopticSala])
 
   const decoratedRows = useMemo<DecoratedPlantRow[]>(() => {
     return rows.map((row) => {
@@ -529,6 +590,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
               {visibleRows.map((row) => {
                 const isSelected = row.sala === selectedSala
                 const isExpanded = expandedSala === row.sala
+                const isDimmed = hasExpandedRow && !isExpanded
                 const progress =
                   typeof row.percentEnergiaConsumata === 'number'
                     ? Math.max(0, Math.min(100, row.percentEnergiaConsumata))
@@ -553,21 +615,31 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                       role="button"
                       tabIndex={0}
                       aria-pressed={isSelected}
-                      onClick={() => onSelectSala(row.sala)}
+                      onClick={() => {
+                        onSelectSala(row.sala)
+                        setExpandedSala(row.sala)
+                        setSynopticSala(null)
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
                           onSelectSala(row.sala)
+                          setExpandedSala(row.sala)
+                          setSynopticSala(null)
                         }
                       }}
                       className={[
-                        'border-b border-slate-200 transition-colors hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300',
-                        isSelected ? 'bg-teal-50' : '',
-                        row.isStale ? 'opacity-80' : '',
-                        row.isAnomaly ? 'border-l-4 border-l-rose-500 bg-rose-50/40' : '',
+                        'border-b border-slate-200 transition-all duration-200 hover:bg-slate-50/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300',
+                        isExpanded
+                          ? 'relative z-[1] border-b-transparent bg-white shadow-[0_16px_30px_-24px_rgba(15,23,42,0.45)] ring-1 ring-sky-100'
+                          : '',
+                        !isExpanded && isSelected ? 'bg-teal-50/80' : '',
+                        row.isStale && !isExpanded ? 'opacity-80' : '',
+                        row.isAnomaly && !isExpanded ? 'border-l-4 border-l-rose-500 bg-rose-50/40' : '',
+                        isDimmed ? 'bg-slate-50/45 text-slate-500 opacity-70 saturate-75' : '',
                       ].join(' ')}
                     >
-                      <td className="font-medium text-slate-900">
+                      <td className={['font-medium transition-colors duration-200', isExpanded ? 'text-slate-950' : isDimmed ? 'text-slate-600' : 'text-slate-900'].join(' ')}>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
@@ -576,7 +648,14 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                               setExpandedSala((prev) => (prev === row.sala ? null : row.sala))
                               setSynopticSala((prev) => (prev === row.sala ? prev : null))
                             }}
-                            className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-[11px] text-slate-600 hover:bg-slate-100"
+                            className={[
+                              'inline-flex h-6 w-6 items-center justify-center rounded-md border text-[11px] font-semibold shadow-sm transition-all duration-200',
+                              isExpanded
+                                ? 'border-sky-300 bg-sky-50 text-sky-700'
+                                : isDimmed
+                                  ? 'border-slate-200 bg-white/70 text-slate-400'
+                                  : 'border-slate-300 text-slate-600 hover:bg-slate-100',
+                            ].join(' ')}
                             title={isExpanded ? 'Chiudi dettagli' : 'Apri dettagli'}
                           >
                             {isExpanded ? '-' : '+'}
@@ -585,7 +664,7 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                         </div>
                       </td>
                       <td>{statusPill(row.status, ss1Warning)}</td>
-                      <td className="text-slate-700">
+                      <td className={['transition-colors duration-200', isDimmed ? 'text-slate-500' : 'text-slate-700'].join(' ')}>
                         <span>{updateLabel}</span>
                         {row.isStale ? (
                           <span
@@ -600,21 +679,21 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                           </span>
                         ) : null}
                       </td>
-                      <td className="text-right tabular-nums text-[14px] font-semibold text-slate-900">
+                      <td className={['text-right tabular-nums text-[14px] font-semibold transition-colors duration-200', isExpanded ? 'text-slate-950' : isDimmed ? 'text-slate-600' : 'text-slate-900'].join(' ')}>
                         {formatOneDecimal(row.flowValue)}
                       </td>
-                      <td className="text-right tabular-nums text-[14px] font-semibold text-slate-900">
+                      <td className={['text-right tabular-nums text-[14px] font-semibold transition-colors duration-200', isExpanded ? 'text-slate-950' : isDimmed ? 'text-slate-600' : 'text-slate-900'].join(' ')}>
                         {formatOneDecimal(row.potenzaMedia)}
                       </td>
-                      <td className="text-right tabular-nums text-slate-500">{formatOneDecimal(row.pressioneMedia)}</td>
-                      <td className="text-right tabular-nums text-slate-500">{formatOneDecimal(row.temperaturaMedia)}</td>
+                      <td className={['text-right tabular-nums transition-colors duration-200', isExpanded ? 'text-slate-700' : isDimmed ? 'text-slate-400' : 'text-slate-500'].join(' ')}>{formatOneDecimal(row.pressioneMedia)}</td>
+                      <td className={['text-right tabular-nums transition-colors duration-200', isExpanded ? 'text-slate-700' : isDimmed ? 'text-slate-400' : 'text-slate-500'].join(' ')}>{formatOneDecimal(row.temperaturaMedia)}</td>
                       <td>
                         {typeof row.percentEnergiaConsumata === 'number' ? (
                           <div className="flex items-center gap-2">
-                            <div className="h-2.5 w-24 rounded-full bg-slate-100">
+                            <div className={['h-2.5 w-24 rounded-full transition-colors duration-200', isDimmed ? 'bg-slate-200/80' : 'bg-slate-100'].join(' ')}>
                               <div className={`h-2.5 rounded-full ${progressClass}`} style={{ width: `${progress}%` }} />
                             </div>
-                            <span className="text-xs font-medium text-slate-700">
+                            <span className={['text-xs font-medium transition-colors duration-200', isDimmed ? 'text-slate-500' : 'text-slate-700'].join(' ')}>
                               {formatPercent(row.percentEnergiaConsumata)}
                             </span>
                           </div>
@@ -645,9 +724,9 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                     </tr>
 
                     {isExpanded ? (
-                      <tr className="border-b border-slate-200 bg-slate-50/60">
-                        <td colSpan={9} className="pb-3 pt-2">
-                          <div className="rounded-lg border border-slate-200 bg-slate-100 p-3">
+                      <tr className="border-b border-slate-200 bg-slate-50/40">
+                        <td colSpan={9} className="pb-4 pt-1">
+                          <div className="rounded-xl border border-sky-100 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] p-4 shadow-[0_20px_36px_-28px_rgba(15,23,42,0.4)] ring-1 ring-sky-50 transition-all duration-200">
                             <div className="mb-3 text-base font-semibold text-slate-900">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <span>{`Sala ${row.sala} - Valori attuali`}</span>
@@ -660,19 +739,32 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                                       setExpandedSala(row.sala)
                                       setSynopticSala((prev) => (prev === row.sala ? null : row.sala))
                                     }}
-                                    className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
                                   >
+                                    <ScadaIcon />
                                     {synopticSala === row.sala ? 'Chiudi SCADA' : 'Apri SCADA'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation()
-                                      navigate(`/sale/${encodeURIComponent(row.sala)}/grafici`)
+                                      if (document.activeElement instanceof HTMLElement) {
+                                        document.activeElement.blur()
+                                      }
+                                      setExpandedSala(null)
+                                      setSynopticSala(null)
+                                      resetAppScrollPosition()
+                                      window.requestAnimationFrame(() => {
+                                        navigate(`/sale/${encodeURIComponent(row.sala)}/grafici`, {
+                                          state: { resetRange: true, scrollToTop: true },
+                                        })
+                                        window.setTimeout(resetAppScrollPosition, 0)
+                                      })
                                     }}
-                                    className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:border-teal-300 hover:bg-teal-100"
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
                                   >
-                                    Apri Grafici
+                                    <ChartsIcon />
+                                    Analizza grafici
                                   </button>
                                 </div>
                               </div>
@@ -692,7 +784,13 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                                   ? [{ label: 'Flusso 2', unit: 'Nm3/h', value: formatOneDecimal(ss2Flows.flow2) }]
                                   : []),
                                 { label: 'Potenza Attiva', unit: 'kW', value: formatOneDecimal(row.potenzaMedia) },
-                                { label: 'CS Attuale', unit: 'kWh/Nm3', value: formatThreeDecimals(row.csPeriodo), highlight: true },
+                                {
+                                  label: 'CS Attuale',
+                                  unit: 'kWh/Nm3',
+                                  value: formatThreeDecimals(row.csPeriodo),
+                                  highlight: true,
+                                  tone: csTone(row.csPeriodo, row.csContratto),
+                                },
                                 { label: 'CS Contratto', unit: 'kWh/Nm3', value: formatThreeDecimals(row.csContratto) },
                                 ...(hasDualPressureTemp
                                   ? [

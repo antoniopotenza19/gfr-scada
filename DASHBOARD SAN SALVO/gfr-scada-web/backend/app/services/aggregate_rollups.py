@@ -465,8 +465,10 @@ def build_sale_raw_select_expressions(
         "temperatura_max": "MAX(src.`temperatura`)",
         "umidita_relativa_avg": "AVG(src.`umidita_relativa`)",
         "cons_specifico_avg": (
+            # Specific consumption must be derived from energy/volume at bucket level.
+            # Falling back to AVG(raw consSpecifico) would introduce mathematical drift.
             f"CASE WHEN {volume_sql} > 0 THEN {energy_sql} / NULLIF({volume_sql}, 0) "
-            "ELSE AVG(src.`consSpecifico`) END"
+            "ELSE NULL END"
         ),
         "updated_at": "CURRENT_TIMESTAMP",
     }
@@ -514,9 +516,23 @@ def build_compressori_raw_select_expressions(
     bucket_sql = bucket_alias
     duration_hours_sql = bucket_duration_hours_sql("1min", bucket_sql)
     state_case_sql = compressor_state_case_sql("src")
-    on_ratio_sql = f"(SUM(CASE WHEN {state_case_sql} = 'ON' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0))"
-    standby_ratio_sql = f"(SUM(CASE WHEN {state_case_sql} = 'STANDBY' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0))"
-    off_ratio_sql = f"(SUM(CASE WHEN {state_case_sql} = 'OFF' THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0))"
+    bucket_end_sql = bucket_end_expression_sql("1min", bucket_sql)
+    interval_start_sql = (
+        f"CASE WHEN COALESCE(src.`rollup_bucket_rownum`, 0) = 1 THEN {bucket_sql} "
+        "ELSE src.`timestamp` END"
+    )
+    # Compressor activity must be derived from actual elapsed time between samples.
+    # Using sample ratios introduces drift as soon as the telemetry cadence becomes irregular.
+    row_end_sql = f"LEAST(COALESCE(src.`rollup_next_timestamp`, {bucket_end_sql}), {bucket_end_sql})"
+    state_minutes_sql = (
+        "GREATEST("
+        f"TIMESTAMPDIFF(MICROSECOND, {interval_start_sql}, {row_end_sql}), "
+        "0"
+        ") / 60000000.0"
+    )
+    on_minutes_sql = f"SUM(CASE WHEN {state_case_sql} = 'ON' THEN {state_minutes_sql} ELSE 0 END)"
+    standby_minutes_sql = f"SUM(CASE WHEN {state_case_sql} = 'STANDBY' THEN {state_minutes_sql} ELSE 0 END)"
+    off_minutes_sql = f"SUM(CASE WHEN {state_case_sql} = 'OFF' THEN {state_minutes_sql} ELSE 0 END)"
 
     expressions: dict[str, str] = {
         "idCompressore": "src.`idCompressore`",
@@ -534,9 +550,9 @@ def build_compressori_raw_select_expressions(
         "i2_avg": "AVG(src.`l2`)",
         "i3_avg": "AVG(src.`l3`)",
         "cosphi_avg": "AVG(src.`cosphi`)",
-        "minuti_on": on_ratio_sql,
-        "minuti_standby": standby_ratio_sql,
-        "minuti_off": off_ratio_sql,
+        "minuti_on": on_minutes_sql,
+        "minuti_standby": standby_minutes_sql,
+        "minuti_off": off_minutes_sql,
         "last_stato_compressore": (
             f"SUBSTRING_INDEX(GROUP_CONCAT({state_case_sql} ORDER BY src.`timestamp` DESC SEPARATOR ','), ',', 1)"
         ),
@@ -641,6 +657,16 @@ def build_raw_insert_sql(
 
     filter_sql, filter_params = build_filter_sql(spec.filter_column, entity_ids, alias="src")
     bucket_sql = bucket_expression_sql(granularity, f"src.`{level.source_time_column}`")
+    extra_source_columns = ""
+    if dataset_name == "compressori" and granularity == "1min":
+        extra_source_columns = (
+            ",\n        LEAD(src.`timestamp`) OVER ("
+            "PARTITION BY src.`idSala`, src.`idCompressore` ORDER BY src.`timestamp`"
+            ") AS rollup_next_timestamp"
+            ",\n        ROW_NUMBER() OVER ("
+            f"PARTITION BY src.`idSala`, src.`idCompressore`, {bucket_sql} ORDER BY src.`timestamp`"
+            ") AS rollup_bucket_rownum"
+        )
 
     insert_columns_sql = ", ".join(f"`{column_name}`" for column_name in insert_columns)
     select_columns_sql = ",\n       ".join(
@@ -658,7 +684,7 @@ SELECT
 FROM (
     SELECT
         src.*,
-        {bucket_sql} AS rollup_bucket_start
+        {bucket_sql} AS rollup_bucket_start{extra_source_columns}
     FROM `{level.source_table}` AS src
     WHERE src.`{level.source_time_column}` >= :range_start
       AND src.`{level.source_time_column}` < :range_end{filter_sql}
@@ -776,6 +802,56 @@ def refresh_aggregate_level(
         affected_rows=affected_rows,
         elapsed_seconds=perf_counter() - started_at,
     )
+
+
+def refresh_aggregate_level_safely(
+    connection: Connection,
+    dataset_name: str,
+    granularity: str,
+    requested_start: datetime,
+    requested_end: datetime,
+    *,
+    entity_ids: list[int] | None = None,
+    truncate_target_range: bool = True,
+    dry_run: bool = False,
+    tables: dict[str, Table] | None = None,
+    allow_upsert_fallback: bool = False,
+    logger: logging.Logger | None = None,
+) -> RefreshLevelResult:
+    try:
+        return refresh_aggregate_level(
+            connection,
+            dataset_name,
+            granularity,
+            requested_start,
+            requested_end,
+            entity_ids=entity_ids,
+            truncate_target_range=truncate_target_range,
+            dry_run=dry_run,
+            tables=tables,
+        )
+    except SQLAlchemyError as exc:
+        if truncate_target_range and allow_upsert_fallback and "delete command denied" in str(exc).lower():
+            (logger or LOGGER).warning(
+                "aggregate_refresh_level_delete_denied dataset=%s granularity=%s range=%s->%s entity_ids=%s. Retrying without target delete.",
+                dataset_name,
+                granularity,
+                requested_start,
+                requested_end,
+                entity_ids or "ALL",
+            )
+            return refresh_aggregate_level(
+                connection,
+                dataset_name,
+                granularity,
+                requested_start,
+                requested_end,
+                entity_ids=entity_ids,
+                truncate_target_range=False,
+                dry_run=dry_run,
+                tables=tables,
+            )
+        raise
 
 
 def refresh_pyramid_range(

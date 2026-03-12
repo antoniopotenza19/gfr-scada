@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import AppLayout from '../components/layout/AppLayout'
 import DashboardMonthlyTrendCard from '../components/DashboardMonthlyTrendCard'
@@ -240,6 +240,7 @@ function maxFetchTime(values: Array<number | undefined>) {
 }
 
 export default function Dashboard() {
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const authUser = getAuthUserFromSessionToken()
   const requestedSiteId = searchParams.get('site')
@@ -275,6 +276,8 @@ export default function Dashboard() {
   const [site, setSite] = useState(initialSite)
   const [room, setRoom] = useState(requestedRoom || '')
   const [enableHistoricalQueries, setEnableHistoricalQueries] = useState(false)
+  const [tableResetToken, setTableResetToken] = useState(0)
+  const [openSalaToken, setOpenSalaToken] = useState<string | null>(null)
   const tableSectionRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -304,6 +307,32 @@ export default function Dashboard() {
     const firstAvailable = rooms.find((label) => (roomApiMapping.get(label) || []).length > 0) || rooms[0]
     setRoom((prev) => (prev && rooms.includes(prev) ? prev : firstAvailable))
   }, [rooms, roomApiMapping])
+
+  useLayoutEffect(() => {
+    const firstAvailable = rooms.find((label) => (roomApiMapping.get(label) || []).length > 0) || rooms[0] || ''
+    setRoom(firstAvailable)
+    setTableResetToken((value) => value + 1)
+    setOpenSalaToken(null)
+
+    const scrollToTop = () => {
+      document.getElementById('app-page-top-anchor')?.scrollIntoView({ block: 'start', inline: 'nearest' })
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      document.documentElement.scrollTop = 0
+      document.body.scrollTop = 0
+      document.querySelector<HTMLElement>('.app-shell-main')?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+      document.querySelector<HTMLElement>('.app-shell-content')?.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    }
+
+    scrollToTop()
+    const frameA = window.requestAnimationFrame(scrollToTop)
+    const frameB = window.requestAnimationFrame(() => window.requestAnimationFrame(scrollToTop))
+    const timeoutId = window.setTimeout(scrollToTop, 120)
+    return () => {
+      window.cancelAnimationFrame(frameA)
+      window.cancelAnimationFrame(frameB)
+      window.clearTimeout(timeoutId)
+    }
+  }, [location.key, location.pathname, location.state, rooms, roomApiMapping])
 
   useEffect(() => {
     setEnableHistoricalQueries(false)
@@ -770,6 +799,7 @@ export default function Dashboard() {
 
   const selectRoomAndScrollToTable = (nextRoom: string) => {
     setRoom(nextRoom)
+    setOpenSalaToken(nextRoom)
     window.requestAnimationFrame(() => {
       tableSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -936,11 +966,13 @@ export default function Dashboard() {
         />
 
         <div ref={tableSectionRef}>
-          <PlantTable
-            rows={plantRows}
-            selectedSala={room}
-            onSelectSala={setRoom}
-            siteId={currentSiteId}
+            <PlantTable
+              resetToken={tableResetToken}
+              openSala={openSalaToken}
+              rows={plantRows}
+              selectedSala={room}
+              onSelectSala={setRoom}
+              siteId={currentSiteId}
           />
         </div>
 

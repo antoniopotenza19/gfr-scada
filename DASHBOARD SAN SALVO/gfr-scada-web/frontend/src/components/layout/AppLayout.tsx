@@ -22,6 +22,7 @@ interface AppLayoutProps {
 interface SidebarItem {
   label: string
   to?: string
+  state?: unknown
   icon: 'plants' | 'dashboard' | 'scada' | 'charts' | 'alarms' | 'dev'
 }
 type SidebarIcon = SidebarItem['icon']
@@ -86,12 +87,22 @@ function SidebarLink({ item, disabled = false }: { item: SidebarItem; disabled?:
   return (
     <NavLink
       to={item.to}
+      state={item.state}
       className={({ isActive }) => `app-shell-nav-item${isActive ? ' is-active' : ''}`}
     >
       <span className="app-shell-nav-icon" aria-hidden="true"><NavGlyph kind={item.icon} /></span>
       <span>{item.label}</span>
     </NavLink>
   )
+}
+
+function HeaderGlyph({ locationPath }: { locationPath: string }) {
+  if (locationPath.startsWith('/sites')) return <NavGlyph kind="plants" />
+  if (locationPath.startsWith('/scada/')) return <NavGlyph kind="scada" />
+  if (locationPath.startsWith('/sale/') && locationPath.endsWith('/grafici')) return <NavGlyph kind="charts" />
+  if (locationPath.startsWith('/alarms')) return <NavGlyph kind="alarms" />
+  if (locationPath.startsWith('/dev')) return <NavGlyph kind="dev" />
+  return <NavGlyph kind="dashboard" />
 }
 
 export default function AppLayout({
@@ -142,9 +153,9 @@ export default function AppLayout({
 
   const items: SidebarItem[] = [
     ...(showSitesMenu ? ([{ label: 'Impianti', to: '/sites', icon: 'plants' as SidebarIcon }]) : []),
-    { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' as SidebarIcon },
+    { label: 'Dashboard', to: '/dashboard', state: { resetDashboard: true, scrollToTop: true }, icon: 'dashboard' as SidebarIcon },
     { label: 'SCADA', to: isScadaRoute ? location.pathname : scadaTarget, icon: 'scada' as SidebarIcon },
-    { label: 'Grafici', to: isChartsRoute ? location.pathname : chartsTarget, icon: 'charts' as SidebarIcon },
+    { label: 'Grafici', to: isChartsRoute ? location.pathname : chartsTarget, state: { scrollToTop: true }, icon: 'charts' as SidebarIcon },
     { label: 'Alarms', to: '/alarms', icon: 'alarms' as SidebarIcon },
   ]
   if (canViewDevFeatures(user)) items.push({ label: 'Dev', to: '/dev', icon: 'dev' as SidebarIcon })
@@ -159,7 +170,7 @@ export default function AppLayout({
               <div className="app-shell-brand-subtitle">Energy Saving</div>
             </div>
           ) : (
-            <Link to="/dashboard" className="app-shell-brand-link">
+            <Link to="/dashboard" state={{ resetDashboard: true, scrollToTop: true }} className="app-shell-brand-link">
               <div className="app-shell-brand-title">GFR Engineering</div>
               <div className="app-shell-brand-subtitle">Energy Saving</div>
             </Link>
@@ -194,11 +205,14 @@ export default function AppLayout({
       </aside>
 
       <div className="app-shell-main">
+        <div id="app-page-top-anchor" aria-hidden="true" />
         <header className="app-shell-header">
           <div className="app-shell-header-inner">
             <div className="app-shell-headings">
-              <h1 className="app-shell-title">{title}</h1>
-              {subtitle ? <p className="app-shell-subtitle">{subtitle}</p> : null}
+              <h1 id="app-page-title-anchor" className="app-shell-title">
+                <span className="app-shell-title-icon" aria-hidden="true"><HeaderGlyph locationPath={location.pathname} /></span>
+                <span>{title}</span>
+              </h1>
             </div>
 
             <div className="app-shell-controls-group">

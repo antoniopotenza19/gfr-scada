@@ -4,6 +4,7 @@ export type SalaMetricKey = 'pressione' | 'potenza_kw' | 'cons_specifico' | 'flu
 export interface RangePreset {
   key: ChartRangeKey
   label: string
+  icon?: string
   realtime: boolean
 }
 
@@ -23,16 +24,16 @@ export interface SalaMetricConfig {
 }
 
 export const RANGE_PRESETS: RangePreset[] = [
-  { key: '5m', label: '5 min', realtime: true },
-  { key: '15m', label: '15 min', realtime: true },
-  { key: '30m', label: '30 min', realtime: true },
-  { key: '1h', label: '1 ora', realtime: true },
-  { key: '1d', label: '1 giorno', realtime: false },
-  { key: '1w', label: '1 settimana', realtime: false },
-  { key: '1mo', label: '1 mese', realtime: false },
-  { key: '3mo', label: '3 mesi', realtime: false },
-  { key: '6mo', label: '6 mesi', realtime: false },
-  { key: '1y', label: '1 anno', realtime: false },
+  { key: '5m', label: '5 min', icon: '⏱', realtime: true },
+  { key: '15m', label: '15 min', icon: '⏱', realtime: true },
+  { key: '30m', label: '30 min', icon: '⏱', realtime: true },
+  { key: '1h', label: '1 ora', icon: '⏱', realtime: true },
+  { key: '1d', label: '1 giorno', icon: '📅', realtime: false },
+  { key: '1w', label: '1 settimana', icon: '📅', realtime: false },
+  { key: '1mo', label: '1 mese', icon: '📆', realtime: false },
+  { key: '3mo', label: '3 mesi', icon: '📆', realtime: false },
+  { key: '6mo', label: '6 mesi', icon: '📆', realtime: false },
+  { key: '1y', label: '1 anno', icon: '📆', realtime: false },
 ]
 
 export const DEFAULT_REALTIME_RANGE: ChartRangeKey = '15m'

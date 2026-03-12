@@ -8,6 +8,13 @@ Order of execution for sale:
 Order of execution for compressori:
     1min -> 1h
 
+Suggested long-history strategy:
+    1min   -> recent period only (for example last 30-90 days)
+    15min  -> medium period
+    1h     -> at least from 2023 onward
+    1d     -> long history
+    1month -> full archive
+
 Examples:
     python backend/scripts/backfill_aggregates.py --granularity 1min --from 2026-02-20 --to 2026-03-01 --truncate-target-range --chunk-unit day
     python backend/scripts/backfill_aggregates.py --granularity 15min --from 2026-02-01 --to 2026-03-01 --truncate-target-range --chunk-unit day
@@ -53,7 +60,7 @@ from app.services.aggregate_rollups import (  # noqa: E402
     dataset_granularities,
     level_spec_for_granularity,
     load_dataset_tables,
-    refresh_aggregate_level,
+    refresh_aggregate_level_safely,
     validate_rollup_schema,
 )
 from app.scripts.csv_to_db_ingestor import resolve_database_url  # noqa: E402
@@ -400,7 +407,7 @@ def run_backfill(config: BackfillConfig) -> None:
 
             transaction = connection.begin()
             try:
-                result = refresh_aggregate_level(
+                result = refresh_aggregate_level_safely(
                     connection,
                     config.dataset,
                     config.granularity,
@@ -410,6 +417,8 @@ def run_backfill(config: BackfillConfig) -> None:
                     truncate_target_range=config.truncate_target_range,
                     dry_run=config.dry_run,
                     tables=tables,
+                    allow_upsert_fallback=True,
+                    logger=LOGGER,
                 )
                 if not config.dry_run:
                     transaction.commit()

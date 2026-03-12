@@ -21,12 +21,13 @@ export default function RangePresetSelector({
             type="button"
             onClick={() => onSelect(preset.key)}
             className={[
-              'rounded-full border px-3 py-1.5 text-sm font-medium transition',
+              'inline-flex min-h-[42px] items-center gap-2 rounded-full border px-4.5 py-2.5 text-sm font-semibold transition',
               active
-                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
+                ? 'border-slate-900 bg-slate-900 text-white shadow-[0_10px_18px_-14px_rgba(15,23,42,0.9)]'
+                : 'border-slate-200 bg-white text-slate-700 shadow-[0_8px_18px_-18px_rgba(15,23,42,0.3)] hover:border-slate-300 hover:bg-slate-50',
             ].join(' ')}
           >
+            {preset.icon ? <span aria-hidden="true" className="inline-flex items-center justify-center text-base leading-none">{preset.icon}</span> : null}
             {preset.label}
           </button>
         )

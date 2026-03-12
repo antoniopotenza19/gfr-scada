@@ -12,11 +12,16 @@ from functools import lru_cache
 from time import perf_counter
 from typing import Any, Iterator
 
-from sqlalchemy import MetaData, and_, create_engine, func, select
+from sqlalchemy import MetaData, and_, case, create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..config import settings
 from ..schemas import AlarmEvent
+from .aggregate_policy import (
+    choose_sale_granularity_for_request,
+    granularity_span,
+    iter_sale_granularity_candidates,
+)
 from ..scripts.csv_to_db_ingestor import (
     AppConfig as IngestorConfig,
     CsvToDbIngestor,
@@ -681,22 +686,7 @@ def choose_aggregate_granularity(
     minutes: int,
 ) -> str | None:
     explicit = normalize_bucket_granularity(bucket)
-    if explicit is not None:
-        return explicit
-
-    end_value = to_value or datetime.now(UTC).replace(tzinfo=None)
-    start_value = from_value or (end_value - timedelta(minutes=minutes))
-    span = end_value - start_value
-
-    if span >= timedelta(days=180):
-        return "1d"
-    if span >= timedelta(days=14):
-        return "1h"
-    if span >= timedelta(days=2):
-        return "15min"
-    if span >= timedelta(hours=6):
-        return "1min"
-    return None
+    return choose_sale_granularity_for_request(explicit, from_value, to_value, minutes)
 
 
 def resolve_aggregate_signal_spec(signal: str) -> AggregateSignalSpec | None:
@@ -735,18 +725,65 @@ def resolve_aggregate_value_column(table: Any, signal: str, agg: str) -> tuple[A
     return None
 
 
+def _weighted_group_average_expression(value_column: Any, samples_column: Any) -> Any:
+    safe_weight = func.coalesce(samples_column, 0)
+    weighted_numerator = func.sum(
+        case(
+            (value_column.is_not(None), value_column * safe_weight),
+            else_=0,
+        )
+    )
+    weighted_denominator = func.sum(
+        case(
+            (value_column.is_not(None), safe_weight),
+            else_=0,
+        )
+    )
+    return case(
+        (weighted_denominator > 0, weighted_numerator / func.nullif(weighted_denominator, 0)),
+        else_=None,
+    )
+
+
+def _aggregate_group_expression(table: Any, value_column: Any, spec: AggregateSignalSpec, agg: str) -> Any:
+    if agg == "sum":
+        return func.sum(value_column)
+    if agg == "min":
+        return func.min(value_column)
+    if agg == "max":
+        return func.max(value_column)
+    if agg != "avg":
+        return func.avg(value_column)
+
+    if spec.avg_column == "cons_specifico_avg" and "energia_kwh_sum" in table.c and "volume_nm3_sum" in table.c:
+        sum_energy = func.sum(func.coalesce(table.c.energia_kwh_sum, 0))
+        sum_volume = func.sum(func.coalesce(table.c.volume_nm3_sum, 0))
+        return case(
+            (sum_volume > 0, sum_energy / func.nullif(sum_volume, 0)),
+            else_=None,
+        )
+
+    if "samples_count" in table.c and getattr(value_column, "name", None) == spec.avg_column:
+        return _weighted_group_average_expression(value_column, table.c.samples_count)
+
+    return func.avg(value_column)
+
+
+def _allow_raw_timeseries_fallback(
+    bucket: str | None,
+    from_value: datetime | None,
+    to_value: datetime | None,
+    minutes: int,
+) -> bool:
+    if bucket is not None:
+        return False
+    if from_value is not None or to_value is not None:
+        return False
+    return minutes <= 360
+
+
 def aggregate_granularity_span(granularity: str) -> timedelta:
-    if granularity == "1month":
-        return timedelta(days=31)
-    if granularity == "1d":
-        return timedelta(days=1)
-    if granularity == "1h":
-        return timedelta(hours=1)
-    if granularity == "15min":
-        return timedelta(minutes=15)
-    if granularity == "1min":
-        return timedelta(minutes=1)
-    return timedelta(0)
+    return granularity_span(granularity)
 
 
 def query_aggregate_timeseries(
@@ -759,99 +796,117 @@ def query_aggregate_timeseries(
     bucket: str | None,
     agg: str,
 ) -> list[dict[str, Any]] | None:
-    granularity = choose_aggregate_granularity(bucket, from_value, to_value, minutes)
-    if granularity is None:
-        return None
-
-    table = get_sale_aggregate_tables().get(granularity)
-    if table is None:
-        LOGGER.debug("dashboard_db_timeseries aggregate_table_missing granularity=%s", granularity)
-        return None
-
-    resolved = resolve_aggregate_value_column(table, signal, agg)
-    if resolved is None:
-        LOGGER.debug(
-            "dashboard_db_timeseries aggregate_signal_missing granularity=%s signal=%s agg=%s",
-            granularity,
-            signal,
-            agg,
-        )
-        return None
-
-    value_column, spec = resolved
-    bucket_column = table.c.bucket_start
-
+    preferred_granularity = choose_aggregate_granularity(bucket, from_value, to_value, minutes)
     with energysaving_session() as session:
         target = resolve_target(session, identifier)
         if target is None:
             return None
 
-        conditions = [table.c.idSala.in_(target.sala_ids), value_column.is_not(None)]
-        if from_value is not None:
-            conditions.append(bucket_column >= from_value)
-        if to_value is not None:
-            conditions.append(bucket_column <= to_value)
+        for granularity in iter_sale_granularity_candidates(preferred_granularity):
+            table = get_sale_aggregate_tables().get(granularity)
+            if table is None:
+                LOGGER.debug("dashboard_db_timeseries aggregate_table_missing granularity=%s", granularity)
+                continue
 
-        if len(target.sala_ids) == 1:
-            stmt = (
-                select(bucket_column.label("timestamp"), value_column.label("value"))
-                .where(and_(*conditions))
-                .order_by(bucket_column.asc())
-                .limit(max_points)
-            )
-        else:
-            combine_fn = func.sum if spec.additive else func.avg
-            stmt = (
-                select(bucket_column.label("timestamp"), combine_fn(value_column).label("value"))
-                .where(and_(*conditions))
-                .group_by(bucket_column)
-                .order_by(bucket_column.asc())
-                .limit(max_points)
-            )
+            resolved = resolve_aggregate_value_column(table, signal, agg)
+            if resolved is None:
+                LOGGER.debug(
+                    "dashboard_db_timeseries aggregate_signal_missing granularity=%s signal=%s agg=%s",
+                    granularity,
+                    signal,
+                    agg,
+                )
+                continue
 
-        rows = session.execute(stmt).all()
-        points = [
-            {
-                "ts": _to_utc_iso(row._mapping["timestamp"]),
-                "value": float(row._mapping["value"]),
-            }
-            for row in rows
-            if row._mapping["value"] is not None
-        ]
+            value_column, spec = resolved
+            bucket_column = table.c.bucket_start
+            span = aggregate_granularity_span(granularity)
 
-    if not points:
-        LOGGER.debug(
-            "dashboard_db_timeseries_aggregate_empty target=%s signal=%s granularity=%s agg=%s",
-            identifier,
-            signal,
-            granularity,
-            agg,
-        )
-        return None
+            availability_stmt = select(
+                func.min(bucket_column).label("available_from"),
+                func.max(bucket_column).label("available_to"),
+            ).where(and_(table.c.idSala.in_(target.sala_ids), value_column.is_not(None)))
+            availability = session.execute(availability_stmt).mappings().first()
+            available_from = availability.get("available_from") if availability else None
+            available_to = availability.get("available_to") if availability else None
+            if available_from is None or available_to is None:
+                continue
+            if from_value is not None and available_from > from_value:
+                LOGGER.debug(
+                    "dashboard_db_timeseries aggregate_coverage_start_missing target=%s signal=%s granularity=%s available_from=%s from=%s",
+                    identifier,
+                    signal,
+                    granularity,
+                    available_from,
+                    from_value,
+                )
+                continue
+            if to_value is not None and available_to + span < to_value:
+                LOGGER.debug(
+                    "dashboard_db_timeseries aggregate_coverage_end_missing target=%s signal=%s granularity=%s available_to=%s to=%s",
+                    identifier,
+                    signal,
+                    granularity,
+                    available_to,
+                    to_value,
+                )
+                continue
 
-    latest_point_ts = _parse_iso_datetime(points[-1]["ts"])
-    span = aggregate_granularity_span(granularity)
-    if latest_point_ts is not None and to_value is not None and span > timedelta(0):
-        if to_value - latest_point_ts > span:
+            conditions = [table.c.idSala.in_(target.sala_ids), value_column.is_not(None)]
+            if from_value is not None:
+                conditions.append(bucket_column >= from_value)
+            if to_value is not None:
+                conditions.append(bucket_column < to_value)
+
+            if len(target.sala_ids) == 1:
+                stmt = (
+                    select(bucket_column.label("timestamp"), value_column.label("value"))
+                    .where(and_(*conditions))
+                    .order_by(bucket_column.asc())
+                    .limit(max_points)
+                )
+            else:
+                stmt = (
+                    select(
+                        bucket_column.label("timestamp"),
+                        _aggregate_group_expression(table, value_column, spec, agg).label("value"),
+                    )
+                    .where(and_(*conditions))
+                    .group_by(bucket_column)
+                    .order_by(bucket_column.asc())
+                    .limit(max_points)
+                )
+
+            rows = session.execute(stmt).all()
+            points = [
+                {
+                    "ts": _to_utc_iso(row._mapping["timestamp"]),
+                    "value": float(row._mapping["value"]),
+                }
+                for row in rows
+                if row._mapping["value"] is not None
+            ]
+            if not points:
+                continue
+
             LOGGER.debug(
-                "dashboard_db_timeseries_aggregate_stale target=%s signal=%s granularity=%s latest=%s to=%s",
+                "dashboard_db_timeseries_aggregate target=%s signal=%s points=%s granularity=%s agg=%s",
                 identifier,
                 signal,
+                len(points),
                 granularity,
-                latest_point_ts,
-                to_value,
+                agg,
             )
-            return None
+            return points
 
     LOGGER.debug(
-        "dashboard_db_timeseries_aggregate target=%s signal=%s points=%s granularity=%s agg=%s",
+        "dashboard_db_timeseries aggregate_candidates_exhausted target=%s signal=%s preferred=%s agg=%s",
         identifier,
         signal,
-        len(points),
-        granularity,
+        preferred_granularity,
         agg,
     )
-    return points
+    return None
 
 
 def fetch_dashboard_timeseries(
@@ -865,6 +920,8 @@ def fetch_dashboard_timeseries(
     agg: str,
 ) -> list[dict[str, Any]] | None:
     started_at = perf_counter()
+    explicit_from_value = _parse_iso_datetime(from_ts)
+    explicit_to_value = _parse_iso_datetime(to_ts)
     from_value = _parse_iso_datetime(from_ts)
     to_value = _parse_iso_datetime(to_ts)
     if from_value is None and to_value is None:
@@ -892,6 +949,18 @@ def fetch_dashboard_timeseries(
         )
         return aggregate_points
 
+    if not _allow_raw_timeseries_fallback(bucket, explicit_from_value, explicit_to_value, minutes):
+        LOGGER.debug(
+            "dashboard_db_timeseries raw_fallback_blocked target=%s signal=%s bucket=%s from=%s to=%s minutes=%s",
+            identifier,
+            signal,
+            bucket,
+            from_value,
+            to_value,
+            minutes,
+        )
+        return []
+
     column = resolve_room_signal_column(signal)
     if column is None:
         LOGGER.debug("dashboard_db_timeseries unsupported_signal target=%s signal=%s", identifier, signal)
@@ -909,7 +978,7 @@ def fetch_dashboard_timeseries(
         if from_value is not None:
             conditions.append(rs.c.timestamp >= from_value)
         if to_value is not None:
-            conditions.append(rs.c.timestamp <= to_value)
+            conditions.append(rs.c.timestamp < to_value)
 
         if bucket:
             if bucket != "1 month":
@@ -1020,7 +1089,7 @@ def fetch_dashboard_monthly_overview(
         if from_value is not None:
             conditions.append(bucket_column >= from_value)
         if to_value is not None:
-            conditions.append(bucket_column <= to_value)
+            conditions.append(bucket_column < to_value)
 
         stmt = (
             select(

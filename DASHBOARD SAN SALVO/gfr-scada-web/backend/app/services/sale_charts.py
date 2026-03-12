@@ -9,6 +9,14 @@ from typing import Any
 
 from sqlalchemy import MetaData, and_, func, select
 
+from .aggregate_policy import (
+    SALE_PRESET_TO_GRANULARITY,
+    SALE_REALTIME_PRESETS,
+    choose_compressor_activity_granularity,
+    choose_sale_granularity_for_window,
+    granularity_span,
+    iter_sale_granularity_candidates,
+)
 from .energysaving_runtime import (
     energysaving_session,
     get_energysaving_engine,
@@ -38,19 +46,6 @@ PRESET_DELTAS = {
     "1h": timedelta(hours=1),
     "1d": timedelta(days=1),
     "1w": timedelta(weeks=1),
-}
-
-PRESET_AGGREGATE_GRANULARITY = {
-    "5m": "1min",
-    "15m": "1min",
-    "30m": "1min",
-    "1h": "1min",
-    "1d": "15min",
-    "1w": "1h",
-    "1mo": "1h",
-    "3mo": "1h",
-    "6mo": "1d",
-    "1y": "1d",
 }
 
 SALE_METRIC_FIELDS = (
@@ -94,6 +89,14 @@ def _to_utc_iso(value: datetime | None) -> str | None:
     return value.isoformat().replace("+00:00", "Z")
 
 
+def _to_local_iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        value = value.astimezone().replace(tzinfo=None)
+    return value.isoformat(timespec="seconds")
+
+
 def _parse_iso_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -131,18 +134,9 @@ def _resolve_preset_window(range_key: str, now_value: datetime) -> tuple[datetim
         return _months_ago(now_value, 6), now_value
     if range_key == "1y":
         return _years_ago(now_value, 1), now_value
+    if range_key == "3y":
+        return _years_ago(now_value, 3), now_value
     raise ValueError(f"Unsupported range preset: {range_key}")
-
-
-def _choose_custom_granularity(range_start: datetime, range_end: datetime) -> str:
-    span = range_end - range_start
-    if span <= timedelta(hours=1):
-        return "1min"
-    if span <= timedelta(days=1):
-        return "15min"
-    if span <= timedelta(days=90):
-        return "1h"
-    return "1d"
 
 
 def resolve_range_selection(
@@ -157,8 +151,8 @@ def resolve_range_selection(
 
     if normalized_range:
         range_start, range_end = _resolve_preset_window(normalized_range, now_value)
-        granularity = PRESET_AGGREGATE_GRANULARITY[normalized_range]
-        realtime = normalized_range in {"5m", "15m", "30m", "1h"}
+        granularity = SALE_PRESET_TO_GRANULARITY[normalized_range]
+        realtime = normalized_range in SALE_REALTIME_PRESETS
         return RangeSelection(
             range_key=normalized_range,
             range_start=range_start,
@@ -176,7 +170,7 @@ def resolve_range_selection(
         range_key=None,
         range_start=from_value,
         range_end=to_value,
-        granularity=_choose_custom_granularity(from_value, to_value),
+        granularity=choose_sale_granularity_for_window(from_value, to_value),
         realtime=(to_value - from_value) <= timedelta(hours=1),
     )
 
@@ -236,7 +230,7 @@ def _resolve_sale_context(identifier: str) -> SaleContext:
         sale_code=target_sale_code,
         sale_name=str(sale_row.get("nome") or target_sale_code),
         plant_name=impianto_catalog.get(int(sale_row["idImpianto"])),
-        last_update=_to_utc_iso(last_update),
+        last_update=_to_local_iso(last_update),
     )
 
 
@@ -256,26 +250,67 @@ def _query_bucket_availability(table: Any, identifier_column: Any, identifier_va
     return row.get("available_from"), row.get("available_to")
 
 
-def _query_sale_rows(context: SaleContext, selection: RangeSelection) -> list[dict[str, Any]]:
-    table = get_sale_timeseries_tables().get(selection.granularity)
-    if table is None:
-        raise RuntimeError(f"Aggregate table not available for granularity {selection.granularity}.")
-
+def _query_sale_rows_for_table(
+    table: Any,
+    sale_id: int,
+    range_start: datetime,
+    range_end: datetime,
+) -> list[dict[str, Any]]:
     columns = [table.c.bucket_start.label("bucket_start")]
     columns.extend(table.c[field].label(field) for field in _available_sale_fields(table))
     stmt = (
         select(*columns)
         .where(
             and_(
-                table.c.idSala == context.sale_id,
-                table.c.bucket_start >= selection.range_start,
-                table.c.bucket_start < selection.range_end,
+                table.c.idSala == sale_id,
+                table.c.bucket_start >= range_start,
+                table.c.bucket_start < range_end,
             )
         )
         .order_by(table.c.bucket_start.asc())
     )
     with energysaving_session() as session:
         return [dict(row._mapping) for row in session.execute(stmt).all()]
+
+
+def _resolve_sale_table_for_selection(
+    context: SaleContext,
+    selection: RangeSelection,
+) -> tuple[str, Any, tuple[datetime | None, datetime | None], list[dict[str, Any]]]:
+    tables = get_sale_timeseries_tables()
+    preferred_granularity = selection.granularity
+    fallback_availability = (None, None)
+
+    for granularity in iter_sale_granularity_candidates(preferred_granularity):
+        table = tables.get(granularity)
+        if table is None:
+            continue
+
+        availability = _query_bucket_availability(table, table.c.idSala, context.sale_id)
+        available_from, available_to = availability
+        if available_from is None or available_to is None:
+            if granularity == preferred_granularity:
+                fallback_availability = availability
+            continue
+
+        span = granularity_span(granularity)
+        if selection.range_start < available_from:
+            continue
+        if available_to + span < selection.range_end:
+            continue
+
+        rows = _query_sale_rows_for_table(table, context.sale_id, selection.range_start, selection.range_end)
+        if rows:
+            return granularity, table, availability, rows
+        if granularity == preferred_granularity:
+            fallback_availability = availability
+
+    preferred_table = tables.get(preferred_granularity)
+    if preferred_table is None:
+        raise RuntimeError(f"Aggregate table not available for granularity {preferred_granularity}.")
+
+    rows = _query_sale_rows_for_table(preferred_table, context.sale_id, selection.range_start, selection.range_end)
+    return preferred_granularity, preferred_table, fallback_availability, rows
 
 
 def _weighted_average(rows: list[dict[str, Any]], field: str) -> float | None:
@@ -324,20 +359,19 @@ def _compress_sale_rows(rows: list[dict[str, Any]], max_points: int) -> list[dic
 
 
 def _serialize_sale_point(row: dict[str, Any]) -> dict[str, Any]:
-    energy = row.get("energia_kwh_sum")
-    volume = row.get("volume_nm3_sum")
-    if energy is not None and volume not in (None, 0):
-        cons_specifico = float(energy) / float(volume)
+    power = row.get("potenza_kw_avg")
+    flow = row.get("flusso_nm3h_avg")
+    if power is not None and flow not in (None, 0):
+        cons_specifico = float(power) / float(flow)
     else:
-        cons_specifico = row.get("cons_specifico_avg")
-        cons_specifico = float(cons_specifico) if cons_specifico is not None else None
+        cons_specifico = None
 
     return {
         "timestamp": _to_utc_iso(row.get("bucket_start")),
         "pressione": float(row["pressione_avg"]) if row.get("pressione_avg") is not None else None,
-        "potenza_kw": float(row["potenza_kw_avg"]) if row.get("potenza_kw_avg") is not None else None,
+        "potenza_kw": float(power) if power is not None else None,
         "cons_specifico": cons_specifico,
-        "flusso_nm3h": float(row["flusso_nm3h_avg"]) if row.get("flusso_nm3h_avg") is not None else None,
+        "flusso_nm3h": float(flow) if flow is not None else None,
         "dewpoint": float(row["dewpoint_avg"]) if row.get("dewpoint_avg") is not None else None,
         "temperatura": float(row["temperatura_avg"]) if row.get("temperatura_avg") is not None else None,
     }
@@ -352,11 +386,8 @@ def fetch_sale_chart_timeseries(
 ) -> dict[str, Any]:
     context = _resolve_sale_context(identifier)
     selection = resolve_range_selection(range_key, from_ts, to_ts)
-    table = get_sale_timeseries_tables().get(selection.granularity)
-    if table is None:
-        raise RuntimeError(f"Aggregate table not available for granularity {selection.granularity}.")
-    rows = _query_sale_rows(context, selection)
-    available_from, available_to = _query_bucket_availability(table, table.c.idSala, context.sale_id)
+    resolved_granularity, table, availability, rows = _resolve_sale_table_for_selection(context, selection)
+    available_from, available_to = availability
     compressed_rows = _compress_sale_rows(rows, max_points=max_points)
     points = [_serialize_sale_point(row) for row in compressed_rows]
 
@@ -370,8 +401,8 @@ def fetch_sale_chart_timeseries(
         "available_from_ts": _to_utc_iso(available_from),
         "available_to_ts": _to_utc_iso(available_to),
         "requested_range": selection.range_key,
-        "granularity": selection.granularity,
-        "source_table": SALE_TIMESERIES_TABLES[selection.granularity],
+        "granularity": resolved_granularity,
+        "source_table": SALE_TIMESERIES_TABLES[resolved_granularity],
         "range_has_data": len(points) > 0,
         "points": points,
     }
@@ -398,6 +429,12 @@ def _compressor_dominant_state(minutes_on: float, minutes_standby: float, minute
     return state
 
 
+def _round_activity_minutes(value: float) -> float:
+    if not math.isfinite(value):
+        return 0.0
+    return float(round(value))
+
+
 def fetch_sale_compressor_activity(
     identifier: str,
     range_key: str | None,
@@ -406,7 +443,7 @@ def fetch_sale_compressor_activity(
 ) -> dict[str, Any]:
     context = _resolve_sale_context(identifier)
     selection = resolve_range_selection(range_key, from_ts, to_ts)
-    compressor_granularity = "1min" if selection.granularity in {"1min", "15min"} else "1h"
+    compressor_granularity = choose_compressor_activity_granularity(selection.granularity)
     table = get_compressor_activity_tables().get(compressor_granularity)
     if table is None:
         raise RuntimeError(f"Compressor aggregate table not available for granularity {compressor_granularity}.")
@@ -473,6 +510,9 @@ def fetch_sale_compressor_activity(
         minutes_on = float(row.get("minutes_on") or 0)
         minutes_standby = float(row.get("minutes_standby") or 0)
         minutes_off = float(row.get("minutes_off") or 0)
+        display_minutes_on = _round_activity_minutes(minutes_on)
+        display_minutes_standby = _round_activity_minutes(minutes_standby)
+        display_minutes_off = _round_activity_minutes(minutes_off)
         total_minutes = max(minutes_on + minutes_standby + minutes_off, 0.0)
         utilization_pct = (minutes_on / total_minutes * 100.0) if total_minutes > 0 else 0.0
         standby_pct = (minutes_standby / total_minutes * 100.0) if total_minutes > 0 else 0.0
@@ -485,9 +525,9 @@ def fetch_sale_compressor_activity(
                 "name": str(row.get("name") or row.get("code") or compressor_id),
                 "current_state": _compressor_current_state(current_rows.get(compressor_id)),
                 "dominant_state": _compressor_dominant_state(minutes_on, minutes_standby, minutes_off),
-                "minutes_on": minutes_on,
-                "minutes_standby": minutes_standby,
-                "minutes_off": minutes_off,
+                "minutes_on": display_minutes_on,
+                "minutes_standby": display_minutes_standby,
+                "minutes_off": display_minutes_off,
                 "utilization_pct": utilization_pct,
                 "standby_pct": standby_pct,
                 "off_pct": off_pct,
