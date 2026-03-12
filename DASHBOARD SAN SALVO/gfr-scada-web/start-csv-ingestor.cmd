@@ -5,12 +5,8 @@ set "ROOT=%~dp0"
 set "PYTHON_EXE=%ROOT%venv\Scripts\python.exe"
 
 if not exist "%PYTHON_EXE%" (
-  set "PYTHON_EXE=%ROOT%backend\venv\Scripts\python.exe"
-)
-
-if not exist "%PYTHON_EXE%" (
   echo Python virtualenv non trovato.
-  echo Atteso: venv\Scripts\python.exe oppure backend\venv\Scripts\python.exe
+  echo Atteso: venv\Scripts\python.exe nella root del repository
   exit /b 1
 )
 

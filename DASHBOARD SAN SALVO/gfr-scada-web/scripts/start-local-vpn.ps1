@@ -55,12 +55,11 @@ function Resolve-PythonCommand {
   )
 
   if ($env:VIRTUAL_ENV) {
-    $candidates += (Join-Path $env:VIRTUAL_ENV "Scripts\python.exe")
+    $activePython = Join-Path $env:VIRTUAL_ENV "Scripts\python.exe"
+    if ($activePython -ne (Join-Path $Root "venv\Scripts\python.exe")) {
+      $candidates += $activePython
+    }
   }
-
-  $candidates += @(
-    (Join-Path $Root "backend\venv\Scripts\python.exe")
-  )
 
   foreach ($candidate in $candidates) {
     if ($candidate -and (Test-Path $candidate)) {

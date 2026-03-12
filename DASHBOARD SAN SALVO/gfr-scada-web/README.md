@@ -2,6 +2,24 @@
 
 Monorepo SCADA: FastAPI backend + Timescale/Postgres + React/Vite frontend.
 
+## Ambiente Python
+
+Il repository usa una sola virtual environment Python nella root:
+
+```powershell
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+Per i test backend:
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+`backend/venv` non e piu usata.
+
 ## Avvio rapido
 
 Da root repository, per rialzare tutto dopo aver chiuso:
@@ -93,14 +111,14 @@ Usa `start:vpn:seed` solo su DB di sviluppo locale o ambienti controllati.
 
 ```powershell
 cd gfr-scada-web
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
 docker compose up -d db
 ```
 
 ```powershell
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
 alembic upgrade head
 python app/scripts/seed.py
 uvicorn app.main:app --reload
@@ -141,6 +159,22 @@ Nuovi endpoint:
 - `POST /api/ingest/stop`
 
 Le API frontend esistenti `/api/plants/...` restano invariate.
+
+## Backfill aggregate sale
+
+Per rigenerare le tabelle aggregate MySQL senza passare da pandas usa lo script standalone:
+
+```powershell
+python backend/scripts/backfill_aggregates.py --granularity 1d --from 2024-11-01 --to 2025-03-01
+python backend/scripts/backfill_aggregates.py --granularity 1h --from 2024-11-01 --to 2025-03-01 --sale-ids 1,2,3 --resume
+python backend/scripts/backfill_aggregates.py --granularity 1min --from 2025-02-01 --to 2025-03-01 --chunk-unit day --truncate-target-range
+```
+
+Note operative:
+- usa il resolver DB dell'ingestor se disponibile, altrimenti `DATABASE_URL` o `DB_*`
+- salva lo stato in `backend/runtime/backfill_aggregates.status.json`
+- `--to` e esclusivo
+- per `1month`, `--from` e `--to` devono essere il primo giorno del mese
 
 ## Debugging data freeze
 
