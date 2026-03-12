@@ -3,9 +3,10 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ..schemas import AlarmCreateIn, AlarmEvent, PlantSummary, PlantTimeseries
+from ..schemas import AlarmCreateIn, AlarmEvent, DashboardMonthlyOverview, PlantSummary, PlantTimeseries
 from ..services.energysaving_runtime import (
     fetch_dashboard_alarms,
+    fetch_dashboard_monthly_overview,
     fetch_dashboard_summary,
     fetch_dashboard_timeseries,
     list_enabled_sale_codes,
@@ -93,6 +94,25 @@ def plant_timeseries(
         len(points),
     )
     return {"plant": target, "signal": signal, "points": points}
+
+
+@router.get("/{plant}/monthly-overview", response_model=DashboardMonthlyOverview)
+def plant_monthly_overview(
+    plant: str,
+    from_ts: Optional[str] = Query(None, alias="from"),
+    to_ts: Optional[str] = Query(None, alias="to"),
+):
+    payload = fetch_dashboard_monthly_overview(plant, from_ts=from_ts, to_ts=to_ts)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="plant not found")
+
+    LOGGER.debug(
+        "dashboard_monthly_overview target=%s volume_points=%s energy_points=%s",
+        plant,
+        len(payload["volume_points"]),
+        len(payload["energy_points"]),
+    )
+    return payload
 
 
 @router.get("/{plant}/alarms", response_model=List[AlarmEvent])

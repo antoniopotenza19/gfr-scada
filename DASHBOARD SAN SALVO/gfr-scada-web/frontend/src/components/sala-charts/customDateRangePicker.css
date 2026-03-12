@@ -1,0 +1,156 @@
+@import "react-day-picker/dist/style.css";
+
+.sala-range-picker {
+  --rdp-cell-size: 42px;
+  --rdp-accent-color: rgb(13 148 136);
+  --rdp-background-color: rgb(240 253 250);
+  --rdp-outline: 2px solid rgb(45 212 191 / 0.35);
+  --rdp-outline-selected: 2px solid rgb(15 23 42 / 0.12);
+  display: flex;
+  justify-content: center;
+}
+
+.sala-range-picker .rdp {
+  margin: 0;
+  width: 100%;
+}
+
+.sala-range-picker .rdp-months {
+  width: 100%;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sala-range-picker .rdp-month {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 1.2rem;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 0.4rem 0.25rem;
+}
+
+.sala-range-picker .rdp-caption {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0 1rem;
+  min-height: 3.75rem;
+}
+
+.sala-range-picker .rdp-caption_label,
+.sala-range-picker .rdp-head_cell,
+.sala-range-picker .rdp-day {
+  color: rgb(15 23 42);
+}
+
+.sala-range-picker .rdp-caption_label {
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-transform: capitalize;
+}
+
+.sala-range-picker .rdp-nav {
+  position: absolute;
+  inset: 0 0 auto 0;
+}
+
+.sala-range-picker .rdp-nav_button {
+  position: absolute;
+  top: 0.1rem;
+  border-radius: 9999px;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid rgb(191 219 254);
+  background: rgb(239 246 255);
+  color: rgb(13 148 136);
+  box-shadow: 0 12px 24px -18px rgba(14, 165, 233, 0.5);
+}
+
+.sala-range-picker .rdp-nav_button_previous {
+  left: 0;
+}
+
+.sala-range-picker .rdp-nav_button_next {
+  right: 0;
+}
+
+.sala-range-picker .rdp-head_row {
+  border-top: 1px solid rgb(226 232 240);
+  padding-top: 0.9rem;
+}
+
+.sala-range-picker .rdp-head_cell {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(100 116 139);
+}
+
+.sala-range-picker .rdp-tbody .rdp-cell {
+  padding: 0.12rem;
+}
+
+.sala-range-picker .rdp-day {
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sala-range-picker .rdp-day:hover:not(.rdp-day_selected) {
+  background: rgb(241 245 249);
+}
+
+.sala-range-picker .rdp-day_selected,
+.sala-range-picker .rdp-day_selected:focus-visible,
+.sala-range-picker .rdp-day_selected:hover {
+  background: linear-gradient(135deg, rgb(14 165 233), rgb(13 148 136));
+  color: white;
+  box-shadow: 0 10px 22px -16px rgba(14, 165, 233, 0.7);
+}
+
+.sala-range-picker .rdp-day_range_middle {
+  background: rgb(224 242 254 / 0.9);
+  color: rgb(14 116 144);
+}
+
+.sala-range-picker .rdp-day_range_start,
+.sala-range-picker .rdp-day_range_end {
+  background: linear-gradient(135deg, rgb(14 165 233), rgb(13 148 136));
+  color: white;
+}
+
+.sala-range-picker .rdp-day_today:not(.rdp-day_selected) {
+  border: 1px solid rgb(125 211 252);
+  background: rgb(239 246 255);
+  color: rgb(3 105 161);
+}
+
+.sala-range-picker .rdp-day_outside {
+  color: rgb(148 163 184);
+  opacity: 0.8;
+}
+
+@media (max-width: 1760px) {
+  .sala-range-picker {
+    --rdp-cell-size: 40px;
+  }
+}
+
+@media (max-width: 1320px) {
+  .sala-range-picker {
+    --rdp-cell-size: 38px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .sala-range-picker .rdp-months {
+    flex-direction: column;
+  }
+
+  .sala-range-picker .rdp-caption_label {
+    font-size: 1.5rem;
+  }
+}

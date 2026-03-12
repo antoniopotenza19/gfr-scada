@@ -162,12 +162,21 @@ Le API frontend esistenti `/api/plants/...` restano invariate.
 
 ## Backfill aggregate sale
 
-Per rigenerare le tabelle aggregate MySQL senza passare da pandas usa lo script standalone:
+Le aggregate ora seguono un rollup piramidale:
+
+- sale: `registrazioni_sale -> sale_agg_1min -> sale_agg_15min -> sale_agg_1h -> sale_agg_1d -> sale_agg_1month`
+- compressori: `registrazioni_compressori -> compressori_agg_1min -> compressori_agg_1h`
+
+Per il backfill storico esegui i livelli in ordine, senza saltare quello inferiore:
 
 ```powershell
-python backend/scripts/backfill_aggregates.py --granularity 1d --from 2024-11-01 --to 2025-03-01
-python backend/scripts/backfill_aggregates.py --granularity 1h --from 2024-11-01 --to 2025-03-01 --sale-ids 1,2,3 --resume
-python backend/scripts/backfill_aggregates.py --granularity 1min --from 2025-02-01 --to 2025-03-01 --chunk-unit day --truncate-target-range
+python backend/scripts/backfill_aggregates.py --granularity 1min --from 2026-02-20 --to 2026-03-01 --truncate-target-range --chunk-unit day
+python backend/scripts/backfill_aggregates.py --granularity 15min --from 2026-02-01 --to 2026-03-01 --truncate-target-range --chunk-unit day
+python backend/scripts/backfill_aggregates.py --granularity 1h --from 2025-11-01 --to 2026-03-01 --truncate-target-range --chunk-unit week
+python backend/scripts/backfill_aggregates.py --granularity 1d --from 2025-11-01 --to 2026-03-01 --truncate-target-range --chunk-unit month
+python backend/scripts/backfill_aggregates.py --granularity 1month --from 2025-11-01 --to 2026-03-01 --truncate-target-range --chunk-unit month
+python backend/scripts/backfill_aggregates.py --dataset compressori --granularity 1min --from 2026-02-20 --to 2026-03-01 --truncate-target-range --chunk-unit day
+python backend/scripts/backfill_aggregates.py --dataset compressori --granularity 1h --from 2026-02-20 --to 2026-03-01 --truncate-target-range --chunk-unit day
 ```
 
 Note operative:
@@ -175,6 +184,10 @@ Note operative:
 - salva lo stato in `backend/runtime/backfill_aggregates.status.json`
 - `--to` e esclusivo
 - per `1month`, `--from` e `--to` devono essere il primo giorno del mese
+- i livelli superiori non leggono piu il raw: `15min` legge `1min`, `1h` legge `15min`, `1d` legge `1h`, `1month` legge `1d`
+- le medie nei rollup superiori sono pesate con `samples_count`
+- `cons_specifico_avg` viene ricalcolato come `energia_kwh_sum / volume_nm3_sum`
+- l'ingestor aggiorna automaticamente la piramide aggregate dopo il commit dei dati raw e dello stato corrente
 
 ## Debugging data freeze
 

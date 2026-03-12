@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import AppLayout from '../components/layout/AppLayout'
-import BarMetricChart from '../components/BarMetricChart'
+import DashboardMonthlyTrendCard from '../components/DashboardMonthlyTrendCard'
 import KpiRow from '../components/KpiRow'
 import PlantGeoMap, { type MapMarkerState } from '../components/PlantGeoMap'
 import PlantTable from '../components/PlantTable'
@@ -14,7 +14,7 @@ import { PLANT_BOOKMARKS, SAN_SALVO_MAP_CENTER } from '../constants/plantMap'
 import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
 import { SITE_LIST, SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId, siteIdToLegacyKey, type SiteId } from '../constants/sites'
-import { fetchMergedTimeseriesCandidates, fetchPlantSummary, fetchTimeseries } from '../api/plants'
+import { fetchPlantMonthlyOverview, fetchPlantSummary, fetchTimeseries } from '../api/plants'
 import { usePlants } from '../hooks/usePlants'
 import type { PlantSummary, TimeseriesPoint } from '../types/api'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
@@ -36,8 +36,6 @@ const DEW_SIGNAL_EXACT = ['AT-061', 'Dew Point', 'DewPoint']
 const DEW_SIGNAL_INCLUDES = ['dew', 'rugiad']
 const TEMP_SIGNAL_EXACT = ['Temperatura', 'Temperature']
 const TEMP_SIGNAL_INCLUDES = ['temperatur', 'temp']
-const MONTHLY_VOLUME_SIGNAL_CANDIDATES = ['Flusso TOT', 'Flusso', 'Flow']
-const MONTHLY_ENERGY_SIGNAL_CANDIDATES = ['Potenza Attiva TOT', 'Potenza Attiva', 'Power']
 
 const LIVE_WINDOW_MS = 180_000
 const POWER_HISTORY_MINUTES = 2
@@ -49,8 +47,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) |
 const CS_CONTRACT_BY_ROOM: Record<string, number> = {
   BRAVO: 0.103,
   CENTAC: 0.101,
-  LAMINATO: 0.184,
-  LAMINATI: 0.184,
+  LAMINATO: 0.178,
+  LAMINATI: 0.178,
   'PRIMO ALTA': 0.5,
   'PRIMO BASSA': 0.3,
   SS1: 0.102,
@@ -187,21 +185,6 @@ function formatLastUpdate(value: string | null) {
   const d = new Date(value)
   if (!Number.isFinite(d.getTime())) return '-'
   return d.toLocaleTimeString('it-IT', { hour12: false, timeZone: 'UTC' })
-}
-
-function aggregateMonthlyPoints(seriesList: TimeseriesPoint[][]): TimeseriesPoint[] {
-  const byTs = new Map<string, number>()
-  for (const series of seriesList) {
-    for (const point of series || []) {
-      const value = Number(point.value)
-      if (!Number.isFinite(value)) continue
-      byTs.set(point.ts, (byTs.get(point.ts) || 0) + value)
-    }
-  }
-
-  return Array.from(byTs.entries())
-    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
-    .map(([ts, value]) => ({ ts, value }))
 }
 
 function buildMonthlyRange(fromIso: string, toIso: string): string[] {
@@ -345,13 +328,11 @@ export default function Dashboard() {
       from: from.toISOString(),
       to: to.toISOString(),
       fallbackTo: to.toISOString(),
-      hasClosedMonth: true,
     }
   }, [])
   const monthlyFrom = monthlyRange.from
   const monthlyTo = monthlyRange.to
   const monthlyFallbackTo = monthlyRange.fallbackTo
-  const monthlyHasClosedMonth = monthlyRange.hasClosedMonth
   const siteApiRooms = useMemo(() => {
     const all = rooms.flatMap((label) => roomApiMapping.get(label) || [])
     return Array.from(new Set(all))
@@ -471,74 +452,15 @@ export default function Dashboard() {
     return map
   }, [siteApiRooms, recentPowerQueries, currentNowMs])
 
-  const monthlyVolumeQueries = useQueries({
-    queries: siteApiRooms.map((apiRoom) => {
-      const summary = summaryByApiRoom.get(apiRoom)
-      const signalsMap = summary?.signals || {}
-      const currentSignal =
-        pickSignalNameByPatterns(signalsMap, MONTHLY_VOLUME_SIGNAL_CANDIDATES, ['flusso tot', 'flusso 7 barg', 'flusso', 'flow', 'portat', 'nm3']) ||
-        null
-      const signalCandidates = currentSignal
-        ? [currentSignal, ...MONTHLY_VOLUME_SIGNAL_CANDIDATES.filter((item) => item !== currentSignal)]
-        : MONTHLY_VOLUME_SIGNAL_CANDIDATES
-      return {
-        queryKey: ['site-monthly-volume', site, apiRoom, signalCandidates.join('|'), monthlyFrom, monthlyTo],
-        queryFn: () =>
-          fetchMergedTimeseriesCandidates(
-            apiRoom,
-            signalCandidates,
-            monthlyFrom,
-            monthlyFallbackTo,
-            '1 month',
-            undefined,
-            240,
-            'sum'
-          ),
-        enabled: enableHistoricalQueries && signalCandidates.length > 0,
-        staleTime: 10 * 60_000,
-        cacheTime: 30 * 60_000,
-        refetchInterval: false,
-        refetchIntervalInBackground: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        retry: 1,
-      }
-    }),
-  })
-
-  const monthlyEnergyQueries = useQueries({
-    queries: siteApiRooms.map((apiRoom) => {
-      const summary = summaryByApiRoom.get(apiRoom)
-      const signalsMap = summary?.signals || {}
-      const currentSignal =
-        pickSignalNameByPatterns(signalsMap, MONTHLY_ENERGY_SIGNAL_CANDIDATES, ['potenza attiva tot', 'potenza attiva', 'power', 'kw']) ||
-        null
-      const signalCandidates = currentSignal
-        ? [currentSignal, ...MONTHLY_ENERGY_SIGNAL_CANDIDATES.filter((item) => item !== currentSignal)]
-        : MONTHLY_ENERGY_SIGNAL_CANDIDATES
-      return {
-        queryKey: ['site-monthly-energy', site, apiRoom, signalCandidates.join('|'), monthlyFrom, monthlyTo],
-        queryFn: () =>
-          fetchMergedTimeseriesCandidates(
-            apiRoom,
-            signalCandidates,
-            monthlyFrom,
-            monthlyFallbackTo,
-            '1 month',
-            undefined,
-            240,
-            'sum'
-          ),
-        enabled: enableHistoricalQueries && signalCandidates.length > 0,
-        staleTime: 10 * 60_000,
-        cacheTime: 30 * 60_000,
-        refetchInterval: false,
-        refetchIntervalInBackground: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
-        retry: 1,
-      }
-    }),
+  const monthlyOverviewQuery = useQuery({
+    queryKey: ['site-monthly-overview', site, monthlyFrom, monthlyTo],
+    queryFn: () => fetchPlantMonthlyOverview(site, monthlyFrom, monthlyFallbackTo),
+    enabled: enableHistoricalQueries,
+    staleTime: 10 * 60_000,
+    cacheTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: 1,
   })
 
   useEffect(() => {
@@ -779,12 +701,8 @@ export default function Dashboard() {
   const topPressureValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.pressureAvg.toFixed(1) : '--'
   const topDewValue = selectedRow && selectedRow.available && !selectedRowHideValues ? selectedRow.dewAvg.toFixed(1) : '--'
   const ss1RealtimeIssue = Boolean(selectedRow?.hasRealtimeMismatchIssue)
-  const monthlyVolumeAllData = aggregateMonthlyPoints(
-    monthlyVolumeQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])
-  )
-  const monthlyEnergyAllData = aggregateMonthlyPoints(
-    monthlyEnergyQueries.map((q) => (q.data as TimeseriesPoint[] | undefined) || [])
-  )
+  const monthlyVolumeAllData = monthlyOverviewQuery.data?.volume_points || []
+  const monthlyEnergyAllData = monthlyOverviewQuery.data?.energy_points || []
   const monthlyVolumePreferred = fillMissingMonths(
     filterTimeseriesRange(monthlyVolumeAllData, monthlyFrom, monthlyTo),
     monthlyFrom,
@@ -805,12 +723,9 @@ export default function Dashboard() {
     monthlyFrom,
     monthlyFallbackTo
   )
-  const monthlyVolumeUsesFallback = !hasNonZeroPoints(monthlyVolumePreferred) && hasNonZeroPoints(monthlyVolumeFallback)
-  const monthlyEnergyUsesFallback = !hasNonZeroPoints(monthlyEnergyPreferred) && hasNonZeroPoints(monthlyEnergyFallback)
-  const monthlyVolumeData = monthlyVolumeUsesFallback ? monthlyVolumeFallback : monthlyVolumePreferred
-  const monthlyEnergyData = monthlyEnergyUsesFallback ? monthlyEnergyFallback : monthlyEnergyPreferred
-  const monthlyChartsLoading =
-    monthlyVolumeQueries.some((q) => q.isLoading) || monthlyEnergyQueries.some((q) => q.isLoading)
+  const monthlyVolumeData = hasNonZeroPoints(monthlyVolumePreferred) ? monthlyVolumePreferred : monthlyVolumeFallback
+  const monthlyEnergyData = hasNonZeroPoints(monthlyEnergyPreferred) ? monthlyEnergyPreferred : monthlyEnergyFallback
+  const monthlyChartsLoading = monthlyOverviewQuery.isLoading
 
   const lastUpdateText = formatLastUpdate(selectedRow?.ts || null)
   const subtitle = room
@@ -819,8 +734,7 @@ export default function Dashboard() {
   const selectedSummaryFetchTs = selectedSiteSummaryQuery?.dataUpdatedAt
   const siteSummaryFetchTs = maxFetchTime(siteSummaryQueries.map((q) => q.dataUpdatedAt))
   const recentPowerFetchTs = maxFetchTime(recentPowerQueries.map((q) => q.dataUpdatedAt))
-  const monthlyVolumeFetchTs = maxFetchTime(monthlyVolumeQueries.map((q) => q.dataUpdatedAt))
-  const monthlyEnergyFetchTs = maxFetchTime(monthlyEnergyQueries.map((q) => q.dataUpdatedAt))
+  const monthlyOverviewFetchTs = monthlyOverviewQuery.dataUpdatedAt
 
   const isSummaryLoading = Boolean(selectedApiRoom && selectedSiteSummaryQuery?.isLoading && !selectedSummary)
   const mapMarkerStates = useMemo<Record<string, MapMarkerState>>(() => {
@@ -873,7 +787,8 @@ export default function Dashboard() {
       onPlantChange={setSite}
       selectorOptions={allowedSiteOptions}
       selectorPlaceholder="Select site"
-      scadaPlant={selectedApiRoom}
+      scadaPlant={room}
+      chartsPlant={room}
     >
       <div className="min-w-0 space-y-4">
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 xl:grid-cols-3">
@@ -1004,8 +919,7 @@ export default function Dashboard() {
                 <div><span className="font-semibold">Summary last fetch:</span> {formatFetchTime(selectedSummaryFetchTs)}</div>
                 <div><span className="font-semibold">Site summary fetch:</span> {formatFetchTime(siteSummaryFetchTs)}</div>
                 <div><span className="font-semibold">Recent power fetch:</span> {formatFetchTime(recentPowerFetchTs)}</div>
-                <div><span className="font-semibold">Monthly volume fetch:</span> {formatFetchTime(monthlyVolumeFetchTs)}</div>
-                <div><span className="font-semibold">Monthly energy fetch:</span> {formatFetchTime(monthlyEnergyFetchTs)}</div>
+                <div><span className="font-semibold">Monthly overview fetch:</span> {formatFetchTime(monthlyOverviewFetchTs)}</div>
                 <div className="md:col-span-2 xl:col-span-3">
                   <span className="font-semibold">API base URL:</span> <code>{API_BASE_URL}</code>
                 </div>
@@ -1031,48 +945,24 @@ export default function Dashboard() {
         </div>
 
         <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-slate-900">Volume prodotto per Mese Nm3 (Impianto Totale)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-2 text-sm text-slate-500">
-                {monthlyVolumeUsesFallback
-                  ? 'Somma mensile delle sale disponibili da novembre fino a oggi.'
-                  : 'Somma mensile delle sale disponibili da novembre fino a oggi.'}
-              </p>
-              {monthlyChartsLoading ? (
-                <Skeleton className="h-72 w-full" />
-              ) : monthlyHasClosedMonth && monthlyVolumeData.length > 0 ? (
-                <BarMetricChart data={monthlyVolumeData} barColor="#0f766e" xMode="month" />
-              ) : (
-                <div className="text-sm text-slate-500">
-                  Dati mensili non disponibili per questo impianto.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-slate-900">Energia consumata per Mese kWh (Impianto Totale)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-2 text-sm text-slate-500">
-                {monthlyEnergyUsesFallback
-                  ? 'Somma mensile delle sale disponibili da novembre fino a oggi.'
-                  : 'Somma mensile delle sale disponibili da novembre fino a oggi.'}
-              </p>
-              {monthlyChartsLoading ? (
-                <Skeleton className="h-72 w-full" />
-              ) : monthlyHasClosedMonth && monthlyEnergyData.length > 0 ? (
-                <BarMetricChart data={monthlyEnergyData} barColor="#0284c7" xMode="month" />
-              ) : (
-                <div className="text-sm text-slate-500">
-                  Dati mensili non disponibili per questo impianto.
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <DashboardMonthlyTrendCard
+            title="Volume prodotto impianto"
+            unit="Nm3"
+            accentClassName="from-teal-50 via-white to-emerald-50"
+            chartColor="#0f766e"
+            data={monthlyVolumeData}
+            loading={monthlyChartsLoading}
+            emptyMessage="Dati mensili del volume non disponibili per questo impianto."
+          />
+          <DashboardMonthlyTrendCard
+            title="Energia consumata impianto"
+            unit="kWh"
+            accentClassName="from-sky-50 via-white to-cyan-50"
+            chartColor="#0284c7"
+            data={monthlyEnergyData}
+            loading={monthlyChartsLoading}
+            emptyMessage="Dati mensili dell'energia non disponibili per questo impianto."
+          />
         </div>
 
       </div>

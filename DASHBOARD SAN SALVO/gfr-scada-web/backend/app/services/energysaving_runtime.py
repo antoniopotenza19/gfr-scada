@@ -991,6 +991,85 @@ def fetch_dashboard_timeseries(
         return points
 
 
+def fetch_dashboard_monthly_overview(
+    identifier: str,
+    from_ts: str | None,
+    to_ts: str | None,
+) -> dict[str, Any] | None:
+    started_at = perf_counter()
+    from_value = _parse_iso_datetime(from_ts)
+    to_value = _parse_iso_datetime(to_ts)
+    table = get_sale_aggregate_tables().get("1d")
+    if table is None:
+        LOGGER.debug("dashboard_monthly_overview aggregate_table_missing granularity=1d")
+        return None
+
+    if "volume_nm3_sum" not in table.c or "energia_kwh_sum" not in table.c:
+        LOGGER.debug("dashboard_monthly_overview aggregate_columns_missing table=%s", table.name)
+        return None
+
+    bucket_column = table.c.bucket_start
+    month_expr = func.date_format(bucket_column, "%Y-%m-01 00:00:00")
+
+    with energysaving_session() as session:
+        target = resolve_target(session, identifier)
+        if target is None:
+            return None
+
+        conditions = [table.c.idSala.in_(target.sala_ids)]
+        if from_value is not None:
+            conditions.append(bucket_column >= from_value)
+        if to_value is not None:
+            conditions.append(bucket_column <= to_value)
+
+        stmt = (
+            select(
+                month_expr.label("bucket_ts"),
+                func.sum(table.c.volume_nm3_sum).label("volume_value"),
+                func.sum(table.c.energia_kwh_sum).label("energy_value"),
+            )
+            .where(and_(*conditions))
+            .group_by(month_expr)
+            .order_by(month_expr.asc())
+        )
+        rows = session.execute(stmt).all()
+
+        volume_points: list[dict[str, Any]] = []
+        energy_points: list[dict[str, Any]] = []
+        for row in rows:
+            bucket_ts = _to_utc_iso(_parse_iso_datetime(row._mapping["bucket_ts"]))
+            if not bucket_ts:
+                continue
+            volume_value = row._mapping["volume_value"]
+            energy_value = row._mapping["energy_value"]
+            if volume_value is not None:
+                volume_points.append({"ts": bucket_ts, "value": float(volume_value)})
+            if energy_value is not None:
+                energy_points.append({"ts": bucket_ts, "value": float(energy_value)})
+
+    from_payload = _to_utc_iso(from_value) or (volume_points[0]["ts"] if volume_points else energy_points[0]["ts"] if energy_points else "")
+    to_payload = _to_utc_iso(to_value) or (volume_points[-1]["ts"] if volume_points else energy_points[-1]["ts"] if energy_points else "")
+    payload = {
+        "plant": target.label if "target" in locals() and target is not None else identifier,
+        "source_table": table.name,
+        "granularity": "1d",
+        "from_ts": from_payload,
+        "to_ts": to_payload,
+        "range_has_data": bool(volume_points or energy_points),
+        "volume_points": volume_points,
+        "energy_points": energy_points,
+    }
+    _log_perf(
+        "dashboard_monthly_overview_total",
+        started_at,
+        target=payload["plant"],
+        source_table=table.name,
+        volume_points=len(volume_points),
+        energy_points=len(energy_points),
+    )
+    return payload
+
+
 class CsvDbIngestorService:
     def __init__(self) -> None:
         self._thread: threading.Thread | None = None

@@ -48,6 +48,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   position: relative;
   border: 1px solid var(--border-soft);
   border-radius: 12px;
@@ -62,6 +63,11 @@
 .scada-room-row > span:first-child {
   font-weight: 600;
   letter-spacing: 0.01em;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .scada-room-row:hover {
@@ -105,6 +111,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .scada-room-badge.is-active {
@@ -190,6 +198,6 @@
 
 @media (min-width: 1024px) {
   .scada-page-grid {
-    grid-template-columns: clamp(190px, 19vw, 260px) minmax(0, 1fr);
+    grid-template-columns: clamp(260px, 24vw, 340px) minmax(0, 1fr);
   }
 }

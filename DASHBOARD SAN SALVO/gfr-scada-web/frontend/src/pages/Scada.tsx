@@ -551,13 +551,23 @@ export default function Scada() {
       }}
       selectorOptions={allowedSites}
       selectorPlaceholder="Select site"
-      scadaPlant={selectedApiRoom || room}
+      scadaPlant={room}
+      chartsPlant={room}
     >
       <div className="scada-page">
         <div className="scada-page-grid">
           <Card className="scada-rooms-card h-full">
             <CardHeader>
-              <CardTitle className="text-slate-900">SALE</CardTitle>
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-slate-900">SALE</CardTitle>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/sale/${encodeURIComponent(selectedApiRoom || room)}/grafici`)}
+                  className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-sm font-semibold text-teal-700 transition hover:border-teal-300 hover:bg-teal-100"
+                >
+                  Analisi grafici
+                </button>
+              </div>
             </CardHeader>
             <CardContent className="scada-rooms-content">
               <div className="scada-room-list">

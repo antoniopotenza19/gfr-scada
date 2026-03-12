@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { usePlants } from '../../hooks/usePlants'
+import { getLastSelectedSala, setLastSelectedSala } from '../../utils/saleNavigation'
 import { canViewDevFeatures, getAuthUserFromSessionToken } from '../../utils/auth'
 import { clearSelectedSiteId } from '../../utils/siteSelection'
 import './app-layout.css'
@@ -13,6 +14,7 @@ interface AppLayoutProps {
   selectorOptions?: string[]
   selectorPlaceholder?: string
   scadaPlant?: string
+  chartsPlant?: string
   navigationLocked?: boolean
   children: ReactNode
 }
@@ -20,7 +22,7 @@ interface AppLayoutProps {
 interface SidebarItem {
   label: string
   to?: string
-  icon: 'plants' | 'dashboard' | 'scada' | 'alarms' | 'dev'
+  icon: 'plants' | 'dashboard' | 'scada' | 'charts' | 'alarms' | 'dev'
 }
 type SidebarIcon = SidebarItem['icon']
 
@@ -50,6 +52,17 @@ function NavGlyph({ kind }: { kind: SidebarIcon }) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 4 3.5 19h17L12 4Zm0 5v5m0 3h.01" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'charts') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 18h16M6 15l4-4 3 2 5-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="6" cy="15" r="1.2" fill="currentColor" />
+        <circle cx="10" cy="11" r="1.2" fill="currentColor" />
+        <circle cx="13" cy="13" r="1.2" fill="currentColor" />
+        <circle cx="18" cy="7" r="1.2" fill="currentColor" />
       </svg>
     )
   }
@@ -89,6 +102,7 @@ export default function AppLayout({
   selectorOptions,
   selectorPlaceholder = 'Select plant',
   scadaPlant,
+  chartsPlant,
   navigationLocked = false,
   children,
 }: AppLayoutProps) {
@@ -107,6 +121,12 @@ export default function AppLayout({
     }
   }, [options, plant, onPlantChange])
 
+  useEffect(() => {
+    if (chartsPlant) {
+      setLastSelectedSala(chartsPlant)
+    }
+  }, [chartsPlant])
+
   const handleLogout = () => {
     sessionStorage.removeItem('gfr_token')
     clearSelectedSiteId()
@@ -114,13 +134,17 @@ export default function AppLayout({
   }
 
   const isScadaRoute = location.pathname.startsWith('/scada/')
-  const scadaName = scadaPlant ?? plant
-  const scadaTarget = scadaName ? `/scada/${scadaName}` : undefined
+  const isChartsRoute = location.pathname.startsWith('/sale/') && location.pathname.endsWith('/grafici')
+  const scadaName = scadaPlant || getLastSelectedSala()
+  const chartsName = chartsPlant || getLastSelectedSala()
+  const scadaTarget = scadaName ? `/scada/${encodeURIComponent(scadaName)}` : undefined
+  const chartsTarget = chartsName ? `/sale/${encodeURIComponent(chartsName)}/grafici` : undefined
 
   const items: SidebarItem[] = [
     ...(showSitesMenu ? ([{ label: 'Impianti', to: '/sites', icon: 'plants' as SidebarIcon }]) : []),
     { label: 'Dashboard', to: '/dashboard', icon: 'dashboard' as SidebarIcon },
     { label: 'SCADA', to: isScadaRoute ? location.pathname : scadaTarget, icon: 'scada' as SidebarIcon },
+    { label: 'Grafici', to: isChartsRoute ? location.pathname : chartsTarget, icon: 'charts' as SidebarIcon },
     { label: 'Alarms', to: '/alarms', icon: 'alarms' as SidebarIcon },
   ]
   if (canViewDevFeatures(user)) items.push({ label: 'Dev', to: '/dev', icon: 'dev' as SidebarIcon })

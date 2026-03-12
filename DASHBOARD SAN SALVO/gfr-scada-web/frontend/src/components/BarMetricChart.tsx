@@ -17,9 +17,19 @@ interface BarMetricChartProps {
   data: DataPoint[]
   barColor?: string
   xMode?: 'auto' | 'time' | 'month'
+  height?: number
+  tooltipLabel?: string
+  valueFormatter?: (value: number) => string
 }
 
-export default function BarMetricChart({ data, barColor = '#0f766e', xMode = 'auto' }: BarMetricChartProps) {
+export default function BarMetricChart({
+  data,
+  barColor = '#0f766e',
+  xMode = 'auto',
+  height = 320,
+  tooltipLabel = 'Valore',
+  valueFormatter,
+}: BarMetricChartProps) {
   if (!data || data.length === 0) {
     return <div className="flex h-64 items-center justify-center text-sm text-slate-500">No data</div>
   }
@@ -32,30 +42,47 @@ export default function BarMetricChart({ data, barColor = '#0f766e', xMode = 'au
     new Intl.NumberFormat('it-IT', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
   const fullNumber = (value: number) =>
     new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 }).format(value)
+  const formatTooltipValue = valueFormatter || ((value: number) => fullNumber(value))
   const formatAxisTime = (value: string) =>
     useMonthFormat
-      ? new Date(value).toLocaleDateString([], { month: '2-digit', year: '2-digit' })
+      ? new Date(value).toLocaleDateString('it-IT', { month: 'short', year: '2-digit' })
       : new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
   return (
-    <div style={{ width: '100%', height: 320 }}>
+    <div style={{ width: '100%', height }}>
       <ResponsiveContainer>
-        <BarChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" />
+        <BarChart data={data} margin={{ top: 12, right: 10, left: 4, bottom: 0 }}>
+          <CartesianGrid stroke="#dbe4ee" strokeDasharray="3 6" vertical={false} />
           <XAxis
             dataKey="ts"
             tickFormatter={formatAxisTime}
             interval="preserveStartEnd"
             minTickGap={48}
             tickMargin={10}
-            tick={{ fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 11, fill: '#64748b' }}
           />
-          <YAxis width={64} tick={{ fontSize: 11 }} tickFormatter={(v: number) => compactNumber(v)} />
+          <YAxis
+            width={64}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 11, fill: '#64748b' }}
+            tickFormatter={(v: number) => compactNumber(v)}
+          />
           <Tooltip
-            labelFormatter={(v: string) => new Date(v).toLocaleString()}
-            formatter={(value: number) => [fullNumber(Number(value)), 'Valore']}
+            cursor={{ fill: 'rgba(148, 163, 184, 0.08)' }}
+            contentStyle={{
+              borderRadius: 16,
+              border: '1px solid rgba(226, 232, 240, 0.95)',
+              boxShadow: '0 20px 45px rgba(15, 23, 42, 0.12)',
+              background: 'rgba(255, 255, 255, 0.96)',
+            }}
+            labelStyle={{ color: '#334155', fontWeight: 600 }}
+            labelFormatter={(v: string) => new Date(v).toLocaleString('it-IT')}
+            formatter={(value: number) => [formatTooltipValue(Number(value)), tooltipLabel]}
           />
-          <Bar dataKey="value" fill={barColor} radius={[2, 2, 0, 0]} />
+          <Bar dataKey="value" fill={barColor} radius={[8, 8, 0, 0]} maxBarSize={36} />
         </BarChart>
       </ResponsiveContainer>
     </div>

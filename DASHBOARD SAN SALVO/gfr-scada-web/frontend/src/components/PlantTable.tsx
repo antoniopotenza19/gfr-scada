@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
 import CompressorsTable from './compressors/CompressorsTable'
 import PowerMetrics from './compressors/PowerMetrics'
@@ -397,6 +398,7 @@ function scadaRoomStatus(status: PlantStatus, hasWarning: boolean): ScadaRoomSta
 
 export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }: PlantTableProps) {
   void siteId
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
   const [expandedSala, setExpandedSala] = useState<string | null>(null)
@@ -661,6 +663,16 @@ export default function PlantTable({ rows, selectedSala, onSelectSala, siteId }:
                                     className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
                                   >
                                     {synopticSala === row.sala ? 'Chiudi SCADA' : 'Apri SCADA'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      navigate(`/sale/${encodeURIComponent(row.sala)}/grafici`)
+                                    }}
+                                    className="rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:border-teal-300 hover:bg-teal-100"
+                                  >
+                                    Apri Grafici
                                   </button>
                                 </div>
                               </div>

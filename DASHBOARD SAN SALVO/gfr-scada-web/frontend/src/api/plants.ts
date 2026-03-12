@@ -1,5 +1,5 @@
 import api from './client'
-import { TimeseriesPoint, AlarmEvent, PlantSummary } from '../types/api'
+import { TimeseriesPoint, AlarmEvent, DashboardMonthlyOverview, PlantSummary } from '../types/api'
 
 export async function fetchPlants(): Promise<string[]> {
   const resp = await api.get('/api/plants')
@@ -107,6 +107,18 @@ export async function fetchMergedTimeseriesCandidates(
   return Array.from(merged.entries())
     .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
     .map(([ts, value]) => ({ ts, value }))
+}
+
+export async function fetchPlantMonthlyOverview(
+  plant: string,
+  from?: string,
+  to?: string
+): Promise<DashboardMonthlyOverview> {
+  const params: any = {}
+  if (from) params.from = from
+  if (to) params.to = to
+  const resp = await api.get(`/api/plants/${plant}/monthly-overview`, { params })
+  return resp.data
 }
 
 export async function fetchAlarms(

@@ -57,6 +57,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from app.services.aggregate_rollups import refresh_pyramid_range_safely, validate_rollup_schema
+
 LOGGER = logging.getLogger("csv_to_db_ingestor")
 
 DEFAULT_POLL_SECONDS = 5
@@ -238,6 +240,8 @@ class ImportOutcome:
     stato_compressori_updated_at: datetime | None = None
     current_sala_upserted: bool = False
     current_compressori_upserted: int = 0
+    aggregate_range_start: datetime | None = None
+    aggregate_range_end: datetime | None = None
 
 
 PLANT_SEEDS: tuple[PlantSeed, ...] = (
@@ -419,6 +423,11 @@ class DatabaseAdapter:
         self.session_factory = session_factory
         self.schema = schema
         self.engine = session_factory.kw["bind"]
+        try:
+            for warning in validate_rollup_schema(self.engine):
+                LOGGER.warning("%s", warning)
+        except Exception as exc:
+            LOGGER.warning("Aggregate rollup schema validation failed during ingestor startup: %s", exc)
 
     def ensure_reference_data(self) -> None:
         with self.session_factory.begin() as session:
@@ -694,6 +703,8 @@ class DatabaseAdapter:
             stato_compressori_updated_at=stato_compressori_updated_at,
             current_sala_upserted=current_sala_upserted,
             current_compressori_upserted=current_compressori_upserted,
+            aggregate_range_start=parse_result.min_timestamp,
+            aggregate_range_end=(parse_result.max_timestamp + timedelta(microseconds=1)) if parse_result.max_timestamp else None,
         )
 
     def _delete_existing_range(
@@ -1433,6 +1444,59 @@ class CsvToDbIngestor:
         if outcome.sala_rows_inserted == 0 and outcome.compressore_rows_inserted == 0:
             LOGGER.warning("No rows inserted for %s after DB write attempt", source.display_name)
             return
+
+        if outcome.aggregate_range_start and outcome.aggregate_range_end:
+            try:
+                sale_results = refresh_pyramid_range_safely(
+                    self.db.engine,
+                    "sale",
+                    outcome.aggregate_range_start,
+                    outcome.aggregate_range_end,
+                    entity_ids=[sala_id],
+                    truncate_target_range=True,
+                    allow_upsert_fallback=True,
+                    logger=LOGGER,
+                )
+                log_pipeline(
+                    source.display_name,
+                    sala_code,
+                    event="aggregate_refresh_sale",
+                    aggregate_levels=[result.granularity for result in sale_results],
+                    aggregate_range_start=outcome.aggregate_range_start,
+                    aggregate_range_end=outcome.aggregate_range_end,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Aggregate refresh failed for sale=%s after ingest. Raw/current-state data were already committed.",
+                    sala_code,
+                )
+
+            if outcome.compressore_rows_inserted > 0:
+                try:
+                    compressori_results = refresh_pyramid_range_safely(
+                        self.db.engine,
+                        "compressori",
+                        outcome.aggregate_range_start,
+                        outcome.aggregate_range_end,
+                        entity_ids=[sala_id],
+                        truncate_target_range=True,
+                        allow_upsert_fallback=True,
+                        logger=LOGGER,
+                    )
+                    log_pipeline(
+                        source.display_name,
+                        sala_code,
+                        event="aggregate_refresh_compressori",
+                        aggregate_levels=[result.granularity for result in compressori_results],
+                        aggregate_range_start=outcome.aggregate_range_start,
+                        aggregate_range_end=outcome.aggregate_range_end,
+                    )
+                except Exception:
+                    LOGGER.exception(
+                        "Aggregate refresh failed for compressori sala=%s after ingest. Raw/current-state data were already committed.",
+                        sala_code,
+                    )
+
         LOGGER.info(
             "Inserted new data from %s sala=%s rows_sale=%s rows_compressori=%s",
             source.display_name,

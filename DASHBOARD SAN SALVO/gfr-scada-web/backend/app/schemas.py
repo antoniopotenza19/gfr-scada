@@ -29,6 +29,17 @@ class PlantTimeseries(BaseModel):
     points: List[TimeseriesPoint]
 
 
+class DashboardMonthlyOverview(BaseModel):
+    plant: str
+    source_table: str
+    granularity: str
+    from_ts: str
+    to_ts: str
+    range_has_data: bool
+    volume_points: List[TimeseriesPoint]
+    energy_points: List[TimeseriesPoint]
+
+
 class AlarmEvent(BaseModel):
     code: str
     severity: str
@@ -54,3 +65,60 @@ class PlantSummary(BaseModel):
 
 class PlantList(BaseModel):
     plants: List[str]
+
+
+class SaleChartPoint(BaseModel):
+    timestamp: str
+    pressione: Optional[float] = None
+    potenza_kw: Optional[float] = None
+    cons_specifico: Optional[float] = None
+    flusso_nm3h: Optional[float] = None
+    dewpoint: Optional[float] = None
+    temperatura: Optional[float] = None
+
+
+class SaleChartsResponse(BaseModel):
+    sale: str
+    sale_name: Optional[str] = None
+    plant: Optional[str] = None
+    last_update: Optional[str] = None
+    from_ts: str
+    to_ts: str
+    available_from_ts: Optional[str] = None
+    available_to_ts: Optional[str] = None
+    requested_range: Optional[str] = None
+    granularity: str
+    source_table: str
+    range_has_data: bool
+    points: List[SaleChartPoint]
+
+
+class CompressorActivityItem(BaseModel):
+    id_compressore: int
+    code: str
+    name: str
+    current_state: str
+    dominant_state: str
+    minutes_on: float
+    minutes_standby: float
+    minutes_off: float
+    utilization_pct: float
+    standby_pct: float
+    off_pct: float
+    energy_kwh: Optional[float] = None
+    avg_power_kw: Optional[float] = None
+
+
+class SaleCompressorActivityResponse(BaseModel):
+    sale: str
+    sale_name: Optional[str] = None
+    plant: Optional[str] = None
+    from_ts: str
+    to_ts: str
+    available_from_ts: Optional[str] = None
+    available_to_ts: Optional[str] = None
+    requested_range: Optional[str] = None
+    granularity: str
+    source_table: str
+    range_has_data: bool
+    items: List[CompressorActivityItem]
