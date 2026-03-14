@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import { sendMachineCommand } from '../api/commands'
 import { fetchPlantSummary } from '../api/plants'
@@ -299,6 +299,121 @@ function ChartsIcon() {
   )
 }
 
+function FieldIcon({ kind }: { kind: 'flow' | 'power' | 'pressure' | 'cs' | 'dewpoint' | 'temperature' }) {
+  if (kind === 'flow') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+        <path d="M7 15c1.2-3.2 4.1-5.4 8-6 0 3.9-2.8 6.8-6.8 6.8-.4 0-.8 0-1.2-.1Zm0 0c-.8.6-1.5 1.5-2 2.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'power') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+        <path d="m13 2-6 11h4l-1 9 7-12h-4l0-8Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'pressure') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+        <path d="M5 14a7 7 0 1 1 14 0M12 14l3-3M12 21a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'dewpoint') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+        <path d="M12 4c2.8 3.6 5 6.3 5 9a5 5 0 1 1-10 0c0-2.7 2.2-5.4 5-9Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (kind === 'temperature') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+        <path d="M10 6a2 2 0 1 1 4 0v7.2a4 4 0 1 1-4 0Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M12 10v6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+      <path d="M7 6h10M7 12h10M7 18h6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function formatNumeric(value: number | null, fractionDigits = 2) {
+  if (value == null || !Number.isFinite(value)) return '--'
+  return new Intl.NumberFormat('it-IT', { maximumFractionDigits: fractionDigits }).format(value)
+}
+
+function formatTimeOnly(value: string | null | undefined) {
+  if (!value) return '--'
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/)
+  if (match) {
+    const [, , , , hh, min, ss] = match
+    return `${hh}:${min}:${ss}`
+  }
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return '--'
+  return date.toLocaleTimeString('it-IT', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function formatSalaDisplayLabel(value: string | null | undefined) {
+  const normalized = (value || '').trim().toUpperCase()
+  if (normalized === 'SS1 COMPOSIZIONE' || normalized === 'SS1_COMP') return 'SS1 COMP.'
+  if (normalized === 'SS2 COMPOSIZIONE' || normalized === 'SS2_COMP') return 'SS2 COMP.'
+  return value || 'Sala'
+}
+
+function formatSalaButtonLabel(value: string | null | undefined) {
+  const normalized = (value || '').trim().toUpperCase()
+  if (normalized === 'SS1_COMP') return 'SS1 COMPOSIZIONE'
+  if (normalized === 'SS2_COMP') return 'SS2 COMPOSIZIONE'
+  return value || 'Sala'
+}
+
+function formatSiteLabel(value: string | null | undefined) {
+  return (value || '').replace(/-/g, ' ').toUpperCase()
+}
+
+function extractSignalVariants(
+  signals: SignalMap,
+  kind: 'pressure'
+): Array<number | null> {
+  if (kind !== 'pressure') return []
+
+  const byIndex = new Map<number, { value: number; tsMs: number | null }>()
+
+  for (const [name, info] of Object.entries(signals || {})) {
+    const unit = String(info?.unit || '').trim()
+    if (/^\d+$/.test(unit)) continue
+    if (!/pressione|pressure/i.test(name)) continue
+
+    const value = Number(info?.value)
+    if (!Number.isFinite(value)) continue
+
+    const indexMatch = name.match(/(?:\((\d+)\)|\b(\d+))\s*$/)
+    const index = indexMatch ? Number(indexMatch[1] || indexMatch[2]) : 1
+    const tsMsRaw = info?.ts ? new Date(info.ts).getTime() : null
+    const tsMs = Number.isFinite(tsMsRaw as number) ? Number(tsMsRaw) : null
+    const prev = byIndex.get(index)
+
+    if (!prev || (tsMs != null && (prev.tsMs == null || tsMs >= prev.tsMs))) {
+      byIndex.set(index, { value, tsMs })
+    }
+  }
+
+  return Array.from(byIndex.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([, entry]) => entry.value)
+}
+
 function isRecentIso(ts: string | null | undefined, nowMs: number, maxAgeMs: number) {
   const tsMs = parseTsMs(ts)
   if (tsMs == null) return false
@@ -308,6 +423,7 @@ function isRecentIso(ts: string | null | undefined, nowMs: number, maxAgeMs: num
 type RoomIndicatorStatus = 'active' | 'standby' | 'warning' | 'off'
 
 export default function Scada() {
+  const location = useLocation()
   const { plant } = useParams()
   const requested = (plant || '').trim()
   const navigate = useNavigate()
@@ -449,9 +565,7 @@ export default function Scada() {
   const csValue = powerValue != null && flowValue != null && flowValue > 0 ? powerValue / flowValue : null
   const roomMachines = useMemo(() => buildRoomMachines(room, signals), [room, signals])
 
-  const lastUpdate = selectedSummary?.last_update
-    ? new Date(selectedSummary.last_update).toLocaleTimeString()
-    : '--'
+  const lastUpdate = formatTimeOnly(selectedSummary?.last_update)
 
   const siteId = (legacyKeyToSiteId(site) || 'san-salvo') as 'san-salvo' | 'marghera'
   const commandRoomId = selectedApiRoom || room
@@ -491,12 +605,17 @@ export default function Scada() {
     })
   }, [debugEnabled, site, selectedApiRoom, selectedSummary, selectedSiteSummaryQuery])
 
-  const roomStatusClass = (label: string) => {
-    const mapped = (roomApiMapping.get(label) || [])[0] || ''
-    if (!mapped) return 'is-unmapped'
-    if (label === room) return 'is-selected'
-    return 'is-ready'
-  }
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const main = document.querySelector('.app-shell-main')
+    const content = document.querySelector('.app-shell-content')
+    main?.classList.add('scada-main-lock')
+    content?.classList.add('scada-content-lock')
+    return () => {
+      main?.classList.remove('scada-main-lock')
+      content?.classList.remove('scada-content-lock')
+    }
+  }, [])
 
   const roomIndicatorStatus = (label: string): RoomIndicatorStatus => {
     const mapped = (roomApiMapping.get(label) || [])[0] || ''
@@ -532,21 +651,81 @@ export default function Scada() {
 
   const roomStatusText = (label: string) => {
     const status = roomIndicatorStatus(label)
-    if (status === 'active') return 'ACTIVE'
-    if (status === 'standby') return 'STANDBY'
-    if (status === 'warning') return 'WARNING'
-    return 'OFF'
+    if (status === 'active') return 'active'
+    if (status === 'standby') return 'standby'
+    if (status === 'warning') return '! warning'
+    return 'n/d'
   }
 
-  const roomBadgeClass = (label: string) => {
+  const roomStatusClass = (label: string) => {
+    const mapped = (roomApiMapping.get(label) || [])[0] || ''
+    if (!mapped) return 'border-slate-200 bg-slate-50 text-slate-500 dot-slate'
     const status = roomIndicatorStatus(label)
-    if (status === 'active') return 'is-active'
-    if (status === 'standby') return 'is-standby'
-    if (status === 'warning') return 'is-warning'
-    return 'is-off'
+    if (status === 'warning') return 'border-rose-300 bg-rose-100 text-rose-700 dot-warning'
+    if (status === 'active') return 'border-[#9ddfb9] bg-[#e9fbf3] text-[#118a52] dot-active'
+    return 'border-[#ebcf80] bg-[#fff8df] text-[#996300] dot-standby'
   }
+
   const selectedRoomIndicatorStatus = room ? roomIndicatorStatus(room) : 'off'
-  const pageTitle = room ? `SCADA REAL TIME - ${room.toUpperCase()}` : 'SCADA REAL TIME'
+  const pageTitle = `SCADA REAL TIME - ${formatSalaDisplayLabel(room).toUpperCase()}`
+  const embeddedMode = useMemo(() => new URLSearchParams(location.search).get('embedded') === '1', [location.search])
+  const showMultiSiteMeta = authUser.allowedSiteIds.length > 1
+  const isSs2Room = /^SS2\b/i.test(room)
+  const pressureVariants = extractSignalVariants(signals, 'pressure')
+  const pressurePrimary = pressureVariants[0] ?? pressureValue
+  const pressureSecondary = pressureVariants[1] ?? null
+  const showDualPressureCards = isSs2Room && (pressurePrimary != null || pressureSecondary != null)
+  const roomButtonClass = (label: string) => {
+    const mapped = (roomApiMapping.get(label) || [])[0] || ''
+    const selected = label === room
+    if (selected) {
+      return 'is-selected'
+    }
+    if (!mapped) {
+      return 'is-unmapped'
+    }
+    return ''
+  }
+
+  const synopticPanel = (
+    <div className="scada-shell-panel">
+      {selectedApiRoom ? (
+        <div className="scada-shell-stage">
+          <div className="scada-shell-frame">
+            <ScadaSala
+              title={`SCADA ${room}`}
+              lastUpdate={lastUpdate}
+              dryerImageUrl="/images/scada/essiccatore.png"
+              machines={roomMachines}
+              roomStatus={selectedRoomIndicatorStatus}
+              instruments={{
+                totalKw: Number.isFinite(powerValue as number) ? Number(powerValue) : 0,
+                cs: Number.isFinite(csValue as number) ? Number(csValue) : 0,
+                dewPoint: Number.isFinite(dewValue as number) ? Number(dewValue) : 0,
+                pressure: Number.isFinite(pressureValue as number) ? Number(pressureValue) : 0,
+                flow: Number.isFinite(flowValue as number) ? Number(flowValue) : 0,
+                temp: Number.isFinite(tempValue as number) ? Number(tempValue) : 0,
+              }}
+              onStart={canControl ? (machineId) => handleMachineCommand(machineId, 'START') : undefined}
+              onStop={canControl ? (machineId) => handleMachineCommand(machineId, 'STOP') : undefined}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-[220px] items-center justify-center px-6 py-8 text-sm text-slate-500">
+          Nessun mapping API disponibile per la sala selezionata.
+        </div>
+      )}
+    </div>
+  )
+
+  if (embeddedMode) {
+    return (
+      <div className="h-screen bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)]">
+        {synopticPanel}
+      </div>
+    )
+  }
 
   return (
     <AppLayout
@@ -567,31 +746,31 @@ export default function Scada() {
       chartsPlant={room}
     >
       <div className="scada-page">
-        <div className="scada-page-grid">
-          <Card className="scada-rooms-card">
+        <div className="scada-dashboard-grid">
+          <Card className="scada-rooms-card h-full overflow-hidden border-slate-200/80 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] shadow-[0_12px_28px_-24px_rgba(15,23,42,0.18)]">
             <CardHeader>
-              <div className="flex flex-wrap items-center gap-3">
-                <CardTitle className="text-slate-900">SALE</CardTitle>
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate(`/sale/${encodeURIComponent(selectedApiRoom || room)}/grafici`, {
-                      state: { resetRange: true },
-                    })
-                  }
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md"
-                >
-                  <ChartsIcon />
-                  Analizza grafici
-                </button>
-              </div>
+              <CardTitle className="text-slate-900">Sale Stabilimento</CardTitle>
             </CardHeader>
-            <CardContent className="scada-rooms-content">
+            <CardContent>
               <div className="scada-room-list">
                 {rooms.map((label, index) => {
-                  const rowClass = roomStatusClass(label)
-                  const badgeClass = roomBadgeClass(label)
                   const statusText = roomStatusText(label)
+                  const statusClass = roomStatusClass(label)
+                  const roomDotClass = statusClass.includes('dot-active')
+                    ? 'bg-[#58d68d]'
+                    : statusClass.includes('dot-warning')
+                      ? 'bg-rose-500'
+                      : statusClass.includes('dot-standby')
+                        ? 'bg-[#e2b73b]'
+                        : statusClass.includes('dot-amber')
+                          ? 'bg-amber-500'
+                          : 'bg-slate-400'
+                  const roomStatusPillClass = statusClass
+                    .replace(' dot-active', '')
+                    .replace(' dot-warning', '')
+                    .replace(' dot-standby', '')
+                    .replace(' dot-amber', '')
+                    .replace(' dot-slate', '')
                   return (
                     <button
                       key={label}
@@ -600,11 +779,20 @@ export default function Scada() {
                         setRoom(label)
                         navigate(`/scada/${label}`)
                       }}
-                      className={`scada-room-row ${rowClass}`}
+                      className={[
+                        'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm',
+                        room === label ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300',
+                      ].join(' ')}
+                      title={`${formatSalaButtonLabel(label)} - ${statusText}`}
                     >
-                      <span>{`${index + 1}. ${label}`}</span>
-                      <span className={`scada-room-badge ${badgeClass}`}>
-                        <span className={`scada-room-badge-dot ${badgeClass}`} aria-hidden="true" />
+                      <span>{`${index + 1}. ${formatSalaButtonLabel(label)}`}</span>
+                      <span
+                        className={[
+                          'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium leading-5',
+                          roomStatusPillClass,
+                        ].join(' ')}
+                      >
+                        <span className={['inline-block h-2 w-2 rounded-full', roomDotClass].join(' ')} />
                         {statusText}
                       </span>
                     </button>
@@ -614,36 +802,11 @@ export default function Scada() {
             </CardContent>
           </Card>
 
-          <div className="scada-shell-panel min-w-0">
-            {selectedApiRoom ? (
-              <div className="scada-shell-frame">
-                <ScadaSala
-                  title={`SCADA Sala ${room}`}
-                  lastUpdate={lastUpdate}
-                  dryerImageUrl="/images/scada/essiccatore.png"
-                  machines={roomMachines}
-                  roomStatus={selectedRoomIndicatorStatus}
-                  instruments={{
-                    totalKw: Number.isFinite(powerValue as number) ? Number(powerValue) : 0,
-                    cs: Number.isFinite(csValue as number) ? Number(csValue) : 0,
-                    dewPoint: Number.isFinite(dewValue as number) ? Number(dewValue) : 0,
-                    pressure: Number.isFinite(pressureValue as number) ? Number(pressureValue) : 0,
-                    flow: Number.isFinite(flowValue as number) ? Number(flowValue) : 0,
-                    temp: Number.isFinite(tempValue as number) ? Number(tempValue) : 0,
-                  }}
-                  onStart={canControl ? (machineId) => handleMachineCommand(machineId, 'START') : undefined}
-                  onStop={canControl ? (machineId) => handleMachineCommand(machineId, 'STOP') : undefined}
-                  onClose={() => navigate('/dashboard')}
-                />
-              </div>
-            ) : (
-              <Card>
-                <CardContent className="py-8 text-sm text-slate-500">
-                  Nessun mapping API disponibile per la sala selezionata.
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          <Card className="scada-synoptic-card h-full overflow-hidden border-slate-200/80 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] shadow-[0_12px_28px_-24px_rgba(15,23,42,0.18)]">
+            <CardContent className="p-0">
+              {synopticPanel}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </AppLayout>

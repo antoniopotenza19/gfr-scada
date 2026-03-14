@@ -1,5 +1,5 @@
 export type ChartRangeKey = '5m' | '15m' | '30m' | '1h' | '1d' | '1w' | '1mo' | '3mo' | '6mo' | '1y'
-export type SalaMetricKey = 'pressione' | 'potenza_kw' | 'cons_specifico' | 'flusso_nm3h' | 'dewpoint' | 'temperatura'
+export type SalaMetricKey = 'pressione' | 'pressione2' | 'potenza_kw' | 'cons_specifico' | 'flusso_nm3h' | 'dewpoint' | 'temperatura' | 'temperatura2'
 
 export interface RangePreset {
   key: ChartRangeKey
@@ -91,10 +91,6 @@ export const SALA_METRICS: SalaMetricConfig[] = [
 ]
 
 const DEFAULT_THRESHOLD_MAP: Partial<Record<SalaMetricKey, ThresholdLine[]>> = {
-  pressione: [
-    { label: 'Min ammissibile', value: 6.2, color: '#d97706' },
-    { label: 'Max ammissibile', value: 7.8, color: '#dc2626' },
-  ],
   dewpoint: [
     { label: 'Max garantita', value: 3, color: '#dc2626' },
   ],
@@ -102,19 +98,11 @@ const DEFAULT_THRESHOLD_MAP: Partial<Record<SalaMetricKey, ThresholdLine[]>> = {
 
 const THRESHOLD_OVERRIDES_BY_SALA: Partial<Record<string, Partial<Record<SalaMetricKey, ThresholdLine[]>>>> = {
   LAMINATO: {
-    pressione: [
-      { label: 'Min pressione', value: 13, color: '#d97706' },
-      { label: 'Max pressione', value: 23, color: '#dc2626' },
-    ],
     dewpoint: [
       { label: 'Dew point max', value: 10, color: '#dc2626' },
     ],
   },
   LAMINATI: {
-    pressione: [
-      { label: 'Min pressione', value: 13, color: '#d97706' },
-      { label: 'Max pressione', value: 23, color: '#dc2626' },
-    ],
     dewpoint: [
       { label: 'Dew point max', value: 10, color: '#dc2626' },
     ],

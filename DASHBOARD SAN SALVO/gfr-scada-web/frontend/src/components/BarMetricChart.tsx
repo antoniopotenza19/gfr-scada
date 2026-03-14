@@ -52,7 +52,7 @@ export default function BarMetricChart({
     <div style={{ width: '100%', height }}>
       <ResponsiveContainer>
         <BarChart data={data} margin={{ top: 12, right: 10, left: 4, bottom: 0 }}>
-          <CartesianGrid stroke="#dbe4ee" strokeDasharray="3 6" vertical={false} />
+          <CartesianGrid stroke="#cbd5e1" strokeDasharray="3 5" strokeOpacity={0.9} vertical={false} />
           <XAxis
             dataKey="ts"
             tickFormatter={formatAxisTime}
@@ -61,13 +61,13 @@ export default function BarMetricChart({
             tickMargin={10}
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 11, fill: '#64748b' }}
+            tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }}
           />
           <YAxis
             width={64}
             axisLine={false}
             tickLine={false}
-            tick={{ fontSize: 11, fill: '#64748b' }}
+            tick={{ fontSize: 12, fill: '#475569', fontWeight: 500 }}
             tickFormatter={(v: number) => compactNumber(v)}
           />
           <Tooltip

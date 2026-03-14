@@ -10,6 +10,11 @@ export interface AlarmEvent {
   msg?: string;
   message: string;
   ts: string;
+  room?: string;
+  plant?: string;
+  active?: boolean;
+  ack_user?: string | null;
+  ack_time?: string | null;
 }
 
 export interface PlantSummary {
@@ -35,11 +40,13 @@ export interface DashboardMonthlyOverview {
 export interface SaleChartPoint {
   timestamp: string
   pressione: number | null
+  pressione2?: number | null
   potenza_kw: number | null
   cons_specifico: number | null
   flusso_nm3h: number | null
   dewpoint: number | null
   temperatura: number | null
+  temperatura2?: number | null
 }
 
 export interface SaleChartsResponse {

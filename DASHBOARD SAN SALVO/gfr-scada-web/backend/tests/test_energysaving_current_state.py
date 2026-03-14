@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 import tempfile
 
-from sqlalchemy import Column, DateTime, Integer, MetaData, Numeric, String, Table, create_engine, func, select
+from sqlalchemy import Column, DateTime, Integer, MetaData, Numeric, String, Table, create_engine, func, inspect, select
 from sqlalchemy.orm import sessionmaker
 
 from app.scripts.csv_to_db_ingestor import (
@@ -20,7 +20,7 @@ from app.scripts.csv_to_db_ingestor import (
 from app.services import energysaving_runtime
 
 
-def _build_energysaving_test_db():
+def _build_energysaving_test_db(*, with_sale_aggregates: bool = False):
     db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     db_file.close()
 
@@ -85,11 +85,36 @@ def _build_energysaving_test_db():
         Column("statoDati", Integer, nullable=True),
         Column("created_at", DateTime, nullable=True, server_default=func.now()),
     )
+    if with_sale_aggregates:
+        for table_name in ("sale_agg_1min", "sale_agg_15min", "sale_agg_1h", "sale_agg_1d", "sale_agg_1month"):
+            Table(
+                table_name,
+                metadata,
+                Column("idSala", Integer, primary_key=True, nullable=False),
+                Column("bucket_start", DateTime, primary_key=True, nullable=False),
+                Column("samples_count", Integer, nullable=True),
+                Column("pressione_avg", Numeric(18, 4), nullable=True),
+            )
     metadata.create_all(bind=engine)
 
     schema = SchemaBundle(engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     return db_file.name, engine, SessionLocal, schema
+
+
+def test_database_adapter_adds_pressure2_column_to_sale_aggregate_tables():
+    db_path, engine, SessionLocal, schema = _build_energysaving_test_db(with_sale_aggregates=True)
+
+    DatabaseAdapter(SessionLocal, schema)
+
+    inspector = inspect(engine)
+    for table_name in ("sale_agg_1min", "sale_agg_15min", "sale_agg_1h", "sale_agg_1d", "sale_agg_1month"):
+        column_names = {column["name"] for column in inspector.get_columns(table_name)}
+        assert "pressione2_avg" in column_names
+        assert "temperatura2_avg" in column_names
+
+    engine.dispose()
+    os.unlink(db_path)
 
 
 def test_insert_parse_result_updates_current_state_without_touching_history():

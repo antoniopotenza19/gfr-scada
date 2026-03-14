@@ -1,47 +1,89 @@
+.app-shell-main.scada-main-lock {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-shell-content.scada-content-lock {
+  overflow: hidden;
+}
+
 .scada-page {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
-.scada-page-grid {
+.scada-dashboard-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
   align-items: stretch;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
-.scada-rooms-card {
-  border-radius: 14px;
-  border-color: var(--border-base);
-  background: var(--surface-1);
-  box-shadow: var(--shadow-soft);
+.scada-rooms-card,
+.scada-synoptic-card {
   min-height: 0;
+  align-self: stretch;
+}
+
+.scada-rooms-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-self: start;
+}
+
+.scada-synoptic-card {
+  position: relative;
+}
+
+.scada-rooms-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 100%;
+}
+
+.scada-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scada-panel-header--synoptic {
+  padding: 18px 20px 0;
+}
+
+.scada-panel-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #0f172a;
+}
+
+.scada-panel-meta {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
 .scada-room-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  overflow: auto;
   min-height: 0;
-  padding-right: 3px;
-}
-
-.scada-rooms-content {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
+  flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 .scada-room-row {
@@ -52,17 +94,17 @@
   gap: 10px;
   position: relative;
   border: 1px solid var(--border-soft);
-  border-radius: 12px;
-  background: var(--surface-2);
-  color: var(--text-primary);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #1e293b;
   padding: 11px 12px;
-  font-size: 14px;
+  font-size: 13px;
   text-align: left;
   transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .scada-room-row > span:first-child {
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
   flex: 1 1 auto;
   min-width: 0;
@@ -77,10 +119,10 @@
 }
 
 .scada-room-row.is-selected {
-  border-color: rgba(0, 188, 212, 0.28);
-  background: rgba(0, 188, 212, 0.08);
+  border-color: rgba(0, 188, 212, 0.32);
+  background: rgba(0, 188, 212, 0.1);
   color: #0f5f71;
-  box-shadow: 0 2px 8px rgba(0, 188, 212, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 188, 212, 0.1);
 }
 
 .scada-room-row.is-selected::before {
@@ -103,15 +145,15 @@
 .scada-room-badge {
   border: 1px solid var(--border-soft);
   border-radius: 999px;
-  background: #f7fbff;
+  background: rgba(248, 250, 252, 0.96);
   color: #526274;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  padding: 3px 10px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -168,37 +210,50 @@
   min-width: 0;
   min-height: 0;
   display: flex;
-  overflow: hidden;
+  justify-content: flex-start;
+  align-items: flex-start;
+  overflow: visible;
+  padding: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(248, 250, 252, 0.62));
+}
+
+.scada-shell-stage {
+  display: flex;
+  width: 100%;
 }
 
 .scada-shell-frame {
-  border-radius: 16px;
-  border: 1px solid var(--border-base);
-  background: var(--surface-1);
-  box-shadow: var(--shadow-panel);
-  padding: 6px;
-  flex: 1;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  flex: 1 1 auto;
+  width: 100%;
+  margin: 0 auto;
   min-width: 0;
-  min-height: 0;
+  min-height: clamp(740px, calc(100svh - 148px), 940px);
+  height: clamp(740px, calc(100svh - 148px), 940px);
   overflow: hidden;
 }
 
 .scada-shell-frame > .scada-wrap {
+  min-height: 100%;
   height: 100%;
-  min-height: 0;
 }
 
 .scada-shell-frame > .scada-wrap .scada-body {
-  min-height: 0;
+  min-height: 100%;
+  height: 100%;
 }
 
 .scada-shell-frame > .scada-wrap .scada-fit-viewport {
   height: 100%;
-  min-height: 0;
+  min-height: 100%;
 }
 
 @media (min-width: 1024px) {
-  .scada-page-grid {
-    grid-template-columns: clamp(260px, 24vw, 340px) minmax(0, 1fr);
+  .scada-dashboard-grid {
+    grid-template-columns: clamp(250px, 24vw, 340px) minmax(0, 1fr);
+    gap: 8px;
   }
 }

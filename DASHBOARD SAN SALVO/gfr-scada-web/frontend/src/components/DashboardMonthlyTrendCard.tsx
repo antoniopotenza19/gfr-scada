@@ -50,7 +50,6 @@ export default function DashboardMonthlyTrendCard({
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Trend mensile</div>
             <CardTitle className="mt-1">{title}</CardTitle>
-            <div className="mt-1 text-sm text-slate-500">Aggregazione impianto da novembre fino a oggi.</div>
           </div>
           <div className="flex flex-wrap gap-2 xl:justify-end">
             <div className="min-w-[9rem] rounded-2xl border border-white/70 bg-white/80 px-3 py-2 shadow-sm backdrop-blur">

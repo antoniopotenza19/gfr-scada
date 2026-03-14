@@ -57,7 +57,12 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.services.aggregate_rollups import refresh_pyramid_range_safely, validate_rollup_schema
+from app.services.aggregate_rollups import (
+    ensure_sale_aggregate_secondary_columns,
+    level_spec_for_granularity,
+    refresh_pyramid_range_safely,
+    validate_rollup_schema,
+)
 
 LOGGER = logging.getLogger("csv_to_db_ingestor")
 
@@ -423,11 +428,36 @@ class DatabaseAdapter:
         self.session_factory = session_factory
         self.schema = schema
         self.engine = session_factory.kw["bind"]
+        self._ensure_sale_aggregate_secondary_columns()
         try:
             for warning in validate_rollup_schema(self.engine):
                 LOGGER.warning("%s", warning)
         except Exception as exc:
             LOGGER.warning("Aggregate rollup schema validation failed during ingestor startup: %s", exc)
+
+    def _ensure_sale_aggregate_secondary_columns(self) -> None:
+        aggregate_tables = [
+            level_spec_for_granularity("sale", granularity).target_table
+            for granularity in ("1min", "15min", "1h", "1d", "1month")
+        ]
+        existing_tables = set(inspect(self.engine).get_table_names())
+        if not any(table_name in existing_tables for table_name in aggregate_tables):
+            return
+
+        altered_columns: dict[str, list[str]] = {}
+        try:
+            altered_columns = ensure_sale_aggregate_secondary_columns(self.engine)
+        except SQLAlchemyError as exc:
+            LOGGER.warning(
+                "Cannot ensure secondary columns on sale aggregate tables during ingestor startup: %s",
+                exc,
+            )
+
+        if altered_columns:
+            LOGGER.info(
+                "Added secondary sale aggregate columns: %s",
+                ", ".join(f"{table}({', '.join(columns)})" for table, columns in altered_columns.items()),
+            )
 
     def ensure_reference_data(self) -> None:
         with self.session_factory.begin() as session:

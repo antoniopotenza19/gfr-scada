@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { DayPicker, type DateRange } from 'react-day-picker'
 
 import './customDateRangePicker.css'
@@ -8,6 +8,8 @@ interface CustomDateRangePickerProps {
   toValue: string
   onApplyRange: (fromValue: string, toValue: string) => void
   error?: string | null
+  triggerLabel?: string
+  showRangeLabel?: boolean
 }
 
 function pad(value: number) {
@@ -40,19 +42,18 @@ function updateTimePart(currentValue: string, nextTime: string, fallback: Date) 
   return buildLocalDateTimeValue(base, nextTime, toLocalTimeInputValue(base))
 }
 
-function formatSummaryDate(value: string) {
-  const parsed = parseLocalDateTime(value)
-  if (!parsed) {
-    return {
-      day: '--',
-      monthYear: 'Intervallo',
-      time: '--:--',
-    }
-  }
-  return {
-    day: parsed.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' }),
-    time: parsed.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }),
-  }
+function formatCompactRangeLabel(fromValue: string, toValue: string) {
+  const fromDate = parseLocalDateTime(fromValue)
+  const toDate = parseLocalDateTime(toValue)
+  if (!fromDate || !toDate) return 'Select custom range'
+  const formatter = new Intl.DateTimeFormat('it-IT', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  return `${formatter.format(fromDate)} - ${formatter.format(toDate)}`
 }
 
 function CalendarIcon() {
@@ -66,8 +67,8 @@ function CalendarIcon() {
   )
 }
 
-const VISIBLE_MONTHS = 4
-const CURRENT_MONTH_INDEX = 2
+const VISIBLE_MONTHS = 2
+const CURRENT_MONTH_INDEX = 1
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) => pad(index))
 const MINUTE_OPTIONS = Array.from({ length: 60 }, (_, index) => pad(index))
 
@@ -170,46 +171,15 @@ function QuickTimeSelector({ label, value, onChange }: QuickTimeSelectorProps) {
   )
 }
 
-function RangeSummaryCard({ fromValue, toValue }: { fromValue: string; toValue: string }) {
-  const fromSummary = formatSummaryDate(fromValue)
-  const toSummary = formatSummaryDate(toValue)
-
-  return (
-    <div className="min-w-0 flex-1 rounded-2xl border border-slate-200/90 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-4 py-3.5 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.35)]">
-      <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Intervallo attuale</div>
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Da</div>
-          <div className="mt-1">
-            <span className="block text-2xl font-bold leading-none tracking-[-0.02em] text-slate-950">{fromSummary.day}</span>
-          </div>
-          <div className="mt-1.5 text-sm font-medium text-slate-700">{fromSummary.time}</div>
-        </div>
-
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-[0_10px_20px_-16px_rgba(15,23,42,0.3)]">
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
-            <path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </div>
-
-        <div className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50/90 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">A</div>
-          <div className="mt-1">
-            <span className="block text-2xl font-bold leading-none tracking-[-0.02em] text-slate-950">{toSummary.day}</span>
-          </div>
-          <div className="mt-1.5 text-sm font-medium text-slate-700">{toSummary.time}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 export default function CustomDateRangePicker({
   fromValue,
   toValue,
   onApplyRange,
   error,
+  triggerLabel = 'Calendario',
+  showRangeLabel = true,
 }: CustomDateRangePickerProps) {
+  const pickerRef = useRef<HTMLDivElement | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(fromValue)
   const [draftTo, setDraftTo] = useState(toValue)
@@ -223,6 +193,30 @@ export default function CustomDateRangePicker({
   useEffect(() => {
     if (!isOpen) {
       setDisplayMonth(anchoredMonth())
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!pickerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
     }
   }, [isOpen])
 
@@ -264,36 +258,36 @@ export default function CustomDateRangePicker({
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex min-w-[240px] flex-col gap-2">
-          <button
-            type="button"
-            onClick={() =>
-              setIsOpen((current) => {
-                const next = !current
-                if (next) {
-                  setDisplayMonth(anchoredMonth())
-                }
-                return next
-              })
-            }
-            className="inline-flex min-h-[90px] items-center gap-3 rounded-2xl border border-slate-200/90 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] px-5 py-4 text-left text-sm font-semibold text-slate-800 shadow-[0_14px_30px_-24px_rgba(15,23,42,0.35)] transition hover:border-slate-300 hover:bg-slate-50"
-          >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-500">
-              <CalendarIcon />
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Range custom</span>
-              <span className="mt-1 text-base font-semibold text-slate-950">Intervallo personalizzato</span>
-            </span>
-          </button>
-        </div>
-        <RangeSummaryCard fromValue={fromValue} toValue={toValue} />
+    <div ref={pickerRef} className="relative w-fit space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            setIsOpen((current) => {
+              const next = !current
+              if (next) {
+                setDisplayMonth(anchoredMonth())
+              }
+              return next
+            })
+          }
+          className="inline-flex min-h-[40px] items-center gap-2 rounded-full border border-sky-200 bg-[linear-gradient(180deg,_#f8fbff,_#eef6ff)] px-4 py-2 text-sm font-semibold text-sky-800 shadow-[0_12px_28px_-24px_rgba(14,165,233,0.5)] transition hover:border-sky-300 hover:bg-sky-50"
+        >
+          <span className="inline-flex items-center justify-center text-sky-700">
+            <CalendarIcon />
+          </span>
+          {triggerLabel}
+        </button>
+
+        {showRangeLabel ? (
+          <div className="text-sm font-semibold text-slate-800">
+            {formatCompactRangeLabel(fromValue, toValue)}
+          </div>
+        ) : null}
       </div>
 
       {isOpen ? (
-        <div className="space-y-4 rounded-[28px] border border-slate-200/80 bg-[linear-gradient(180deg,_rgba(248,250,252,0.96),_rgba(255,255,255,1)),radial-gradient(circle_at_top_left,_rgba(13,148,136,0.08),_transparent_30%)] p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.35)] sm:p-5">
+        <div className="absolute left-0 top-full z-30 mt-3 w-[min(92vw,56rem)] space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_70px_-28px_rgba(15,23,42,0.4)] sm:left-auto sm:right-0 sm:p-5">
           <div className="sala-range-picker">
             <DayPicker
               mode="range"

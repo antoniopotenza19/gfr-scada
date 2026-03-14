@@ -41,10 +41,16 @@ class DashboardMonthlyOverview(BaseModel):
 
 
 class AlarmEvent(BaseModel):
+    id: Optional[str] = None
     code: str
     severity: str
     message: str
     ts: str
+    room: Optional[str] = None
+    plant: Optional[str] = None
+    active: Optional[bool] = None
+    ack_user: Optional[str] = None
+    ack_time: Optional[str] = None
 
 
 class AlarmCreateIn(BaseModel):
@@ -70,11 +76,13 @@ class PlantList(BaseModel):
 class SaleChartPoint(BaseModel):
     timestamp: str
     pressione: Optional[float] = None
+    pressione2: Optional[float] = None
     potenza_kw: Optional[float] = None
     cons_specifico: Optional[float] = None
     flusso_nm3h: Optional[float] = None
     dewpoint: Optional[float] = None
     temperatura: Optional[float] = None
+    temperatura2: Optional[float] = None
 
 
 class SaleChartsResponse(BaseModel):

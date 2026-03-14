@@ -91,6 +91,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "volume_nm3_sum",
             "energia_kwh_sum",
             "pressione_avg",
+            "pressione2_avg",
             "pressione_min",
             "pressione_max",
             "potenza_kw_avg",
@@ -103,6 +104,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "dewpoint_min",
             "dewpoint_max",
             "temperatura_avg",
+            "temperatura2_avg",
             "temperatura_min",
             "temperatura_max",
             "umidita_relativa_avg",
@@ -115,6 +117,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "volume_nm3_sum",
             "energia_kwh_sum",
             "pressione_avg",
+            "pressione2_avg",
             "pressione_min",
             "pressione_max",
             "potenza_kw_avg",
@@ -127,6 +130,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "dewpoint_min",
             "dewpoint_max",
             "temperatura_avg",
+            "temperatura2_avg",
             "temperatura_min",
             "temperatura_max",
             "umidita_relativa_avg",
@@ -139,6 +143,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "volume_nm3_sum",
             "energia_kwh_sum",
             "pressione_avg",
+            "pressione2_avg",
             "pressione_min",
             "pressione_max",
             "potenza_kw_avg",
@@ -151,6 +156,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "dewpoint_min",
             "dewpoint_max",
             "temperatura_avg",
+            "temperatura2_avg",
             "temperatura_min",
             "temperatura_max",
             "umidita_relativa_avg",
@@ -163,6 +169,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "volume_nm3_sum",
             "energia_kwh_sum",
             "pressione_avg",
+            "pressione2_avg",
             "pressione_min",
             "pressione_max",
             "potenza_kw_avg",
@@ -175,6 +182,7 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "dewpoint_min",
             "dewpoint_max",
             "temperatura_avg",
+            "temperatura2_avg",
             "temperatura_min",
             "temperatura_max",
             "umidita_relativa_avg",
@@ -186,10 +194,12 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
             "volume_nm3_sum",
             "energia_kwh_sum",
             "pressione_avg",
+            "pressione2_avg",
             "potenza_kw_avg",
             "flusso_nm3h_avg",
             "dewpoint_avg",
             "temperatura_avg",
+            "temperatura2_avg",
         },
     },
     "compressori": {
@@ -236,6 +246,11 @@ ROLLUP_REQUIRED_COLUMNS: dict[str, dict[str, set[str]]] = {
     },
 }
 
+SALE_SECONDARY_AGGREGATE_COLUMNS: dict[str, str] = {
+    "pressione2_avg": "DECIMAL(18, 4) NULL",
+    "temperatura2_avg": "DECIMAL(18, 4) NULL",
+}
+
 
 def dataset_spec(dataset_name: str) -> AggregateDatasetSpec:
     try:
@@ -275,6 +290,31 @@ def load_dataset_tables(engine: Engine, dataset_name: str) -> dict[str, Table]:
     if missing:
         raise RuntimeError(f"Missing required aggregate tables for dataset {dataset_name}: {', '.join(missing)}")
     return {table_name: metadata.tables[table_name] for table_name in table_names}
+
+
+def ensure_sale_aggregate_secondary_columns(engine: Engine) -> dict[str, list[str]]:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    aggregate_tables = [level.target_table for level in SALE_LEVELS]
+    altered_columns: dict[str, list[str]] = {}
+
+    with engine.begin() as connection:
+        for table_name in aggregate_tables:
+            if table_name not in existing_tables:
+                continue
+            column_names = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, sql_type in SALE_SECONDARY_AGGREGATE_COLUMNS.items():
+                if column_name in column_names:
+                    continue
+                connection.execute(
+                    text(
+                        f"ALTER TABLE `{table_name}` "
+                        f"ADD COLUMN `{column_name}` {sql_type}"
+                    )
+                )
+                altered_columns.setdefault(table_name, []).append(column_name)
+
+    return altered_columns
 
 
 def validate_rollup_schema(engine: Engine) -> list[str]:
@@ -449,6 +489,7 @@ def build_sale_raw_select_expressions(
         "volume_nm3_sum": volume_sql,
         "energia_kwh_sum": energy_sql,
         "pressione_avg": "AVG(src.`pressione`)",
+        "pressione2_avg": "AVG(src.`pressione2`)",
         "pressione_min": "MIN(src.`pressione`)",
         "pressione_max": "MAX(src.`pressione`)",
         "potenza_kw_avg": "AVG(src.`potAttTotale`)",
@@ -461,6 +502,7 @@ def build_sale_raw_select_expressions(
         "dewpoint_min": f"MIN({dewpoint_sql})",
         "dewpoint_max": f"MAX({dewpoint_sql})",
         "temperatura_avg": "AVG(src.`temperatura`)",
+        "temperatura2_avg": "AVG(src.`temperatura2`)",
         "temperatura_min": "MIN(src.`temperatura`)",
         "temperatura_max": "MAX(src.`temperatura`)",
         "umidita_relativa_avg": "AVG(src.`umidita_relativa`)",
@@ -486,6 +528,7 @@ def build_sale_rollup_select_expressions(target_columns: set[str]) -> dict[str, 
         "volume_nm3_sum": sum_volume_sql,
         "energia_kwh_sum": sum_energy_sql,
         "pressione_avg": weighted_average_sql("pressione_avg"),
+        "pressione2_avg": weighted_average_sql("pressione2_avg"),
         "pressione_min": "MIN(src.`pressione_min`)",
         "pressione_max": "MAX(src.`pressione_max`)",
         "potenza_kw_avg": weighted_average_sql("potenza_kw_avg"),
@@ -498,6 +541,7 @@ def build_sale_rollup_select_expressions(target_columns: set[str]) -> dict[str, 
         "dewpoint_min": "MIN(src.`dewpoint_min`)",
         "dewpoint_max": "MAX(src.`dewpoint_max`)",
         "temperatura_avg": weighted_average_sql("temperatura_avg"),
+        "temperatura2_avg": weighted_average_sql("temperatura2_avg"),
         "temperatura_min": "MIN(src.`temperatura_min`)",
         "temperatura_max": "MAX(src.`temperatura_max`)",
         "umidita_relativa_avg": weighted_average_sql("umidita_relativa_avg"),

@@ -156,7 +156,7 @@ export default function AppLayout({
     { label: 'Dashboard', to: '/dashboard', state: { resetDashboard: true, scrollToTop: true }, icon: 'dashboard' as SidebarIcon },
     { label: 'SCADA', to: isScadaRoute ? location.pathname : scadaTarget, icon: 'scada' as SidebarIcon },
     { label: 'Grafici', to: isChartsRoute ? location.pathname : chartsTarget, state: { scrollToTop: true }, icon: 'charts' as SidebarIcon },
-    { label: 'Alarms', to: '/alarms', icon: 'alarms' as SidebarIcon },
+    { label: 'Allarmi', to: '/alarms', icon: 'alarms' as SidebarIcon },
   ]
   if (canViewDevFeatures(user)) items.push({ label: 'Dev', to: '/dev', icon: 'dev' as SidebarIcon })
 

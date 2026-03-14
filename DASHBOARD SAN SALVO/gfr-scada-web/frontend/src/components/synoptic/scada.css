@@ -173,10 +173,11 @@
 }
 
 .scada-wrap .line-tools-room-title {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  color: var(--scada-text-secondary);
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  color: var(--scada-text-primary);
+  text-transform: uppercase;
 }
 
 .scada-wrap .line-tools-alert {

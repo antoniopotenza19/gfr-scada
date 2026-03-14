@@ -1,11 +1,15 @@
 import logging
+from datetime import UTC, datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
 
+from ..db import get_db
+from ..models import AlarmEvent as AlarmEventModel
 from ..schemas import AlarmCreateIn, AlarmEvent, DashboardMonthlyOverview, PlantSummary, PlantTimeseries
 from ..services.energysaving_runtime import (
-    fetch_dashboard_alarms,
     fetch_dashboard_monthly_overview,
     fetch_dashboard_summary,
     fetch_dashboard_timeseries,
@@ -25,6 +29,29 @@ def empty_summary_payload(target: str) -> dict:
         "dryers": [],
         "active_alarms": [],
     }
+
+
+def _parse_alarm_iso_timestamp(value: Optional[str], field_name: str) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"invalid {field_name} timestamp") from exc
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _serialize_alarm_timestamp(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    else:
+        value = value.astimezone(UTC)
+    return value.isoformat().replace("+00:00", "Z")
 
 
 @router.get("/", response_model=List[str])
@@ -121,11 +148,48 @@ def plant_alarms(
     room: Optional[str] = Query(None),
     from_ts: Optional[str] = Query(None, alias="from"),
     to_ts: Optional[str] = Query(None, alias="to"),
-    limit: int = Query(100, lt=1000),
+    limit: int = Query(1000, ge=1, le=5000),
+    db: Session = Depends(get_db),
 ):
-    del from_ts, to_ts, limit
-    target = room or plant
-    alarms = fetch_dashboard_alarms(target)
+    from_value = _parse_alarm_iso_timestamp(from_ts, "from")
+    to_value = _parse_alarm_iso_timestamp(to_ts, "to")
+    if from_value and to_value and from_value > to_value:
+        raise HTTPException(status_code=400, detail="'from' must be before 'to'")
+
+    statement = select(AlarmEventModel)
+    if room:
+        statement = statement.where(AlarmEventModel.room == room)
+    else:
+        statement = statement.where(or_(AlarmEventModel.room == plant, AlarmEventModel.plant == plant))
+
+    if from_value:
+        statement = statement.where(AlarmEventModel.ts >= from_value)
+    if to_value:
+        statement = statement.where(AlarmEventModel.ts <= to_value)
+
+    rows = (
+        db.execute(
+            statement.order_by(AlarmEventModel.ts.desc(), AlarmEventModel.id.desc()).limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+
+    alarms = [
+        AlarmEvent(
+            id=str(row.id),
+            code=row.signal or f"ALARM-{row.id}",
+            severity=row.severity or "info",
+            message=row.message or "",
+            ts=_serialize_alarm_timestamp(row.ts) or "",
+            room=row.room,
+            plant=row.plant,
+            active=row.active,
+            ack_user=row.ack_user,
+            ack_time=_serialize_alarm_timestamp(row.ack_time),
+        )
+        for row in rows
+    ]
     LOGGER.debug("dashboard_refresh_alarms target=%s room=%s count=%s", plant, room, len(alarms))
     return alarms
 

@@ -65,6 +65,7 @@ function fmt(value: number | null | undefined, digits = 1) {
 }
 
 export default function ScadaSala({
+  title,
   dryerImageUrl,
   machines,
   instruments,
@@ -100,9 +101,8 @@ export default function ScadaSala({
       const nextScaleRaw = Math.min(scaleX, scaleY)
       const nextScale = Number.isFinite(nextScaleRaw) && nextScaleRaw > 0 ? nextScaleRaw : 1
       const scaledWidth = scadaBaseWidth * nextScale
-      const scaledHeight = scadaBaseHeight * nextScale
       const nextOffsetX = Math.max(0, (rect.width - scaledWidth) / 2)
-      const nextOffsetY = Math.max(0, (rect.height - scaledHeight) / 2)
+      const nextOffsetY = 0
 
       setFit((prev) => {
         if (

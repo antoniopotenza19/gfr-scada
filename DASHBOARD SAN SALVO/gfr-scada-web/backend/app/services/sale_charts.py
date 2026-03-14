@@ -50,10 +50,12 @@ PRESET_DELTAS = {
 
 SALE_METRIC_FIELDS = (
     "pressione_avg",
+    "pressione2_avg",
     "potenza_kw_avg",
     "flusso_nm3h_avg",
     "dewpoint_avg",
     "temperatura_avg",
+    "temperatura2_avg",
     "cons_specifico_avg",
     "energia_kwh_sum",
     "volume_nm3_sum",
@@ -339,7 +341,7 @@ def _merge_sale_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         values = [float(row[field]) for row in rows if row.get(field) is not None]
         merged[field] = sum(values) if values else None
 
-    for field in ("pressione_avg", "potenza_kw_avg", "flusso_nm3h_avg", "dewpoint_avg", "temperatura_avg", "cons_specifico_avg"):
+    for field in ("pressione_avg", "pressione2_avg", "potenza_kw_avg", "flusso_nm3h_avg", "dewpoint_avg", "temperatura_avg", "temperatura2_avg", "cons_specifico_avg"):
         merged[field] = _weighted_average(rows, field)
 
     return merged
@@ -369,11 +371,13 @@ def _serialize_sale_point(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "timestamp": _to_utc_iso(row.get("bucket_start")),
         "pressione": float(row["pressione_avg"]) if row.get("pressione_avg") is not None else None,
+        "pressione2": float(row["pressione2_avg"]) if row.get("pressione2_avg") is not None else None,
         "potenza_kw": float(power) if power is not None else None,
         "cons_specifico": cons_specifico,
         "flusso_nm3h": float(flow) if flow is not None else None,
         "dewpoint": float(row["dewpoint_avg"]) if row.get("dewpoint_avg") is not None else None,
         "temperatura": float(row["temperatura_avg"]) if row.get("temperatura_avg") is not None else None,
+        "temperatura2": float(row["temperatura2_avg"]) if row.get("temperatura2_avg") is not None else None,
     }
 
 

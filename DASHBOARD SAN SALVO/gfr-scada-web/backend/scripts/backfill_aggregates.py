@@ -58,6 +58,7 @@ from app.services.aggregate_rollups import (  # noqa: E402
     build_delete_sql as build_shared_delete_sql,
     build_insert_sql as build_shared_insert_sql,
     dataset_granularities,
+    ensure_sale_aggregate_secondary_columns,
     level_spec_for_granularity,
     load_dataset_tables,
     refresh_aggregate_level_safely,
@@ -334,6 +335,17 @@ def prepare_status_payload(config: BackfillConfig, target_table_name: str, sourc
 def run_backfill(config: BackfillConfig) -> None:
     database_url = resolve_database_config()
     engine = get_connection(database_url)
+    if config.dataset == "sale":
+        try:
+            altered_columns = ensure_sale_aggregate_secondary_columns(engine)
+            if altered_columns:
+                LOGGER.info(
+                    "Added secondary sale aggregate columns before backfill: %s",
+                    ", ".join(f"{table}({', '.join(columns)})" for table, columns in altered_columns.items()),
+                )
+        except Exception as exc:
+            LOGGER.warning("Cannot ensure secondary columns on sale aggregate tables before backfill: %s", exc)
+
     schema_warnings = validate_rollup_schema(engine)
     for warning in schema_warnings:
         LOGGER.warning("%s", warning)
