@@ -14,7 +14,7 @@ import { PLANT_BOOKMARKS, SAN_SALVO_MAP_CENTER } from '../constants/plantMap'
 import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
 import { SITE_LIST, SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId, siteIdToLegacyKey, type SiteId } from '../constants/sites'
-import { fetchPlantMonthlyOverview, fetchPlantSummary, fetchTimeseries } from '../api/plants'
+import { fetchAlarms, fetchPlantMonthlyOverview, fetchPlantSummary, fetchTimeseries } from '../api/plants'
 import { usePlants } from '../hooks/usePlants'
 import type { PlantSummary, TimeseriesPoint } from '../types/api'
 import type { PlantRow, PlantStatus } from '../types/plantTable'
@@ -470,6 +470,31 @@ export default function Dashboard() {
       }
     }),
   })
+  const roomAlarmQueries = useQueries({
+    queries: rooms.map((roomLabel) => ({
+      queryKey: ['dashboard-room-alarms', site, roomLabel],
+      queryFn: () => fetchAlarms(site, undefined, undefined, 1000, roomLabel),
+      enabled: Boolean(site && roomLabel),
+      staleTime: LIVE_SUMMARY_REFRESH_MS,
+      cacheTime: 120_000,
+      refetchInterval: LIVE_SUMMARY_REFRESH_MS,
+      refetchIntervalInBackground: true,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      retry: 1,
+    })),
+  })
+  const activeAlarmCountByRoom = useMemo(() => {
+    const map = new Map<string, number>()
+    rooms.forEach((roomLabel, idx) => {
+      const alarms = (roomAlarmQueries[idx]?.data || []) as Array<{ active?: boolean | null }>
+      map.set(
+        roomLabel,
+        alarms.filter((alarm) => alarm.active !== false).length
+      )
+    })
+    return map
+  }, [rooms, roomAlarmQueries])
 
   const fallbackPowerByApiRoom = useMemo(() => {
     const map = new Map<string, { ts: string; value: number }>()
@@ -663,6 +688,7 @@ export default function Dashboard() {
     return {
       label,
       dismissed,
+      activeAlarms: activeAlarmCountByRoom.get(label) || 0,
       hasRealtimeMismatchIssue,
       available: apiRooms.length > 0,
       loading: apiRooms.some((name) => summaryLoadingByApiRoom.get(name)),
@@ -679,7 +705,7 @@ export default function Dashboard() {
       fallbackPowerUsed: powerParts.some((entry) => entry.fallbackUsed),
       detailSignals,
     }
-  })
+  }, [rooms, roomApiMapping, summaryByApiRoom, fallbackPowerByApiRoom, currentNowMs, summaryLoadingByApiRoom, activeAlarmCountByRoom])
 
   const totalPowerRooms = roomRows.reduce((acc, row) => acc + Math.max(0, row.kwh), 0)
   const plantRows: PlantRow[] = roomRows.map((row) => {
@@ -693,6 +719,7 @@ export default function Dashboard() {
     return {
       sala: row.label,
       status,
+      activeAlarms: row.activeAlarms,
       lastUpdate: row.ts,
       realtimeNm3: row.available ? row.nm3 : null,
       realtimeKwh: row.available ? row.kwh : null,

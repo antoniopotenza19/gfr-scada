@@ -1,5 +1,5 @@
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import AppLayout from '../components/layout/AppLayout'
 import { Card, CardContent } from '../components/ui/Card'
@@ -323,12 +323,12 @@ function buildMockAlarms(room: string, referenceNowMs: number): AlarmRecord[] {
     {
       id: `${room}-dryer-state`,
       severity: 'medium',
-      status: 'returned',
+      status: 'ack',
       timestampStart: isoMinutesAgo(205, referenceNowMs),
-      timestampEnd: isoMinutesAgo(160, referenceNowMs),
+      timestampEnd: null,
       tag: 'DRY-118',
-      title: 'Essiccatore in fault temporaneo',
-      description: 'Fault essiccatore rientrato automaticamente dopo reset locale.',
+      title: 'Essiccatore in fault intermittente',
+      description: 'Fault essiccatore riconosciuto, ancora da verificare in campo.',
       machine: `Essiccatore ${room}`,
       area: 'Essiccatori',
       value: 'Fault',
@@ -344,12 +344,12 @@ function buildMockAlarms(room: string, referenceNowMs: number): AlarmRecord[] {
     {
       id: `${room}-comm-timeout`,
       severity: 'info',
-      status: 'returned',
+      status: 'ack',
       timestampStart: isoMinutesAgo(318, referenceNowMs),
-      timestampEnd: isoMinutesAgo(302, referenceNowMs),
+      timestampEnd: null,
       tag: 'SYS-COMM',
-      title: 'Timeout comunicazione gateway',
-      description: 'Timeout di comunicazione registrato sul gateway di acquisizione.',
+      title: 'Timeout comunicazione gateway riconosciuto',
+      description: 'Timeout di comunicazione registrato sul gateway di acquisizione, da monitorare.',
       machine: `Gateway ${room}`,
       area: 'Comunicazione / Sistema',
       value: 'Offline',
@@ -560,8 +560,14 @@ function DetailSection({ title, children, className }: { title: string; children
 }
 
 export default function Alarms() {
+  const location = useLocation()
   const navigate = useNavigate()
   const authUser = useMemo(() => getAuthUserFromSessionToken(), [])
+  const initialAlarmContext = useMemo(() => {
+    const state = location.state as { alarmContext?: { plant?: string | null; room?: string | null } } | null
+    return state?.alarmContext || null
+  }, [location.state])
+  const initialAlarmContextAppliedRef = useRef(false)
   const [demoReferenceNowMs] = useState(() => Date.now())
   const allowedSites = useMemo(
     () =>
@@ -600,6 +606,34 @@ export default function Alarms() {
     }
   }, [allowedSites, selectedSiteLabel])
 
+  useEffect(() => {
+    if (initialAlarmContextAppliedRef.current) return
+    if (!initialAlarmContext || !allowedSites.length) return
+
+    const normalizedPlant = (initialAlarmContext.plant || '').trim().toUpperCase()
+    const normalizedRoom = (initialAlarmContext.room || '').trim().toUpperCase()
+
+    let matchedSite =
+      allowedSites.find((site) => site.label.trim().toUpperCase() === normalizedPlant || site.legacyKey.trim().toUpperCase() === normalizedPlant) || null
+
+    if (!matchedSite && normalizedRoom) {
+      matchedSite =
+        allowedSites.find((site) => (SITE_ROOMS[site.legacyKey] || []).some((room) => room.trim().toUpperCase() === normalizedRoom)) || null
+    }
+
+    if (matchedSite) {
+      setSelectedSiteLabel(matchedSite.label)
+      if (normalizedRoom) {
+        const matchedRoom = (SITE_ROOMS[matchedSite.legacyKey] || []).find((room) => room.trim().toUpperCase() === normalizedRoom)
+        if (matchedRoom) {
+          setRoomFilters([matchedRoom])
+        }
+      }
+    }
+
+    initialAlarmContextAppliedRef.current = true
+  }, [allowedSites, initialAlarmContext])
+
   const selectedSite = useMemo(
     () => allowedSites.find((site) => site.label === selectedSiteLabel) || allowedSites[0] || null,
     [allowedSites, selectedSiteLabel]
@@ -632,7 +666,8 @@ export default function Alarms() {
     [allowedRooms, demoReferenceNowMs, statusOverridesByAlarm]
   )
 
-  const severityCounts = useMemo(() => countBy(allAlarms, (alarm) => alarm.severity), [allAlarms])
+  const openAlarms = useMemo(() => allAlarms.filter((alarm) => alarm.status !== 'returned'), [allAlarms])
+  const severityCounts = useMemo(() => countBy(openAlarms, (alarm) => alarm.severity), [openAlarms])
   const statusCounts = useMemo(() => countBy(allAlarms, (alarm) => alarm.status), [allAlarms])
   const roomCounts = useMemo(() => countBy(allAlarms, (alarm) => alarm.room), [allAlarms])
   const areaCounts = useMemo(() => countBy(allAlarms, (alarm) => alarm.area), [allAlarms])
@@ -691,7 +726,6 @@ export default function Alarms() {
   const selectedAlarmChartRange = selectedAlarm ? buildAlarmChartRange(selectedAlarm, 60) : null
   const canAcknowledgeSelectedAlarm = selectedAlarm ? selectedAlarm.status !== 'ack' && selectedAlarm.status !== 'returned' : false
   const canResolveSelectedAlarm = selectedAlarm ? selectedAlarm.status !== 'returned' : false
-  const openAlarms = useMemo(() => allAlarms.filter((alarm) => alarm.status !== 'returned'), [allAlarms])
   const activeCount = openAlarms.length
   const criticalCount = openAlarms.filter((alarm) => alarm.severity === 'critical').length
   const highCount = openAlarms.filter((alarm) => alarm.severity === 'high').length

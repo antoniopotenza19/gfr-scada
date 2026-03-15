@@ -15,6 +15,9 @@ interface AppLayoutProps {
   selectorPlaceholder?: string
   scadaPlant?: string
   chartsPlant?: string
+  alarmCount?: number | null
+  alarmContextRoom?: string
+  alarmContextPlant?: string
   navigationLocked?: boolean
   children: ReactNode
 }
@@ -105,6 +108,39 @@ function HeaderGlyph({ locationPath }: { locationPath: string }) {
   return <NavGlyph kind="dashboard" />
 }
 
+function AlarmHeaderBadge({ count, to, state }: { count: number; to?: string; state?: unknown }) {
+  const countLabel = String(Math.max(0, count))
+  const statusClass = count > 0 ? 'is-active' : 'is-clear'
+  const content = (
+    <>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.8 2.7 20h18.6L12 3.8Z" fill="currentColor" />
+      </svg>
+      <span className="app-shell-alarm-badge-count">{countLabel}</span>
+    </>
+  )
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        state={state}
+        className={`app-shell-alarm-badge is-clickable ${statusClass}`}
+        title={count > 0 ? `${countLabel} allarmi aperti` : 'Nessun allarme aperto'}
+        aria-label={count > 0 ? `${countLabel} allarmi aperti` : 'Nessun allarme aperto'}
+      >
+        {content}
+      </Link>
+    )
+  }
+
+  return (
+    <div className={`app-shell-alarm-badge ${statusClass}`} title={count > 0 ? `${countLabel} allarmi aperti` : 'Nessun allarme aperto'} aria-label={count > 0 ? `${countLabel} allarmi aperti` : 'Nessun allarme aperto'}>
+      {content}
+    </div>
+  )
+}
+
 export default function AppLayout({
   title,
   subtitle,
@@ -114,6 +150,9 @@ export default function AppLayout({
   selectorPlaceholder = 'Select plant',
   scadaPlant,
   chartsPlant,
+  alarmCount,
+  alarmContextRoom,
+  alarmContextPlant,
   navigationLocked = false,
   children,
 }: AppLayoutProps) {
@@ -150,6 +189,14 @@ export default function AppLayout({
   const chartsName = chartsPlant || getLastSelectedSala()
   const scadaTarget = scadaName ? `/scada/${encodeURIComponent(scadaName)}` : undefined
   const chartsTarget = chartsName ? `/sale/${encodeURIComponent(chartsName)}/grafici` : undefined
+  const alarmState = alarmContextRoom || alarmContextPlant
+    ? {
+        alarmContext: {
+          room: alarmContextRoom || null,
+          plant: alarmContextPlant || null,
+        },
+      }
+    : undefined
 
   const items: SidebarItem[] = [
     ...(showSitesMenu ? ([{ label: 'Impianti', to: '/sites', icon: 'plants' as SidebarIcon }]) : []),
@@ -212,6 +259,7 @@ export default function AppLayout({
               <h1 id="app-page-title-anchor" className="app-shell-title">
                 <span className="app-shell-title-icon" aria-hidden="true"><HeaderGlyph locationPath={location.pathname} /></span>
                 <span>{title}</span>
+                {typeof alarmCount === 'number' ? <AlarmHeaderBadge count={alarmCount} to="/alarms" state={alarmState} /> : null}
               </h1>
             </div>
 

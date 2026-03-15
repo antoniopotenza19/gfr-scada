@@ -7,6 +7,7 @@ import AppLayout from '../components/layout/AppLayout'
 import type { ScadaMachine, ScadaMachineStatus } from '../components/synoptic/ScadaSala'
 import ScadaSala from '../components/synoptic/ScadaSala'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
+import { useAlarms } from '../hooks/useAlarms'
 import { usePlants } from '../hooks/usePlants'
 import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
 import { SITE_ROOMS } from '../constants/siteRooms'
@@ -669,6 +670,11 @@ export default function Scada() {
   const selectedRoomIndicatorStatus = room ? roomIndicatorStatus(room) : 'off'
   const pageTitle = `SCADA REAL TIME - ${formatSalaDisplayLabel(room).toUpperCase()}`
   const embeddedMode = useMemo(() => new URLSearchParams(location.search).get('embedded') === '1', [location.search])
+  const roomAlarmsQuery = useAlarms(site, undefined, undefined, room || undefined)
+  const roomAlarmCount = useMemo(
+    () => (roomAlarmsQuery.data || []).filter((alarm) => alarm.active !== false).length,
+    [roomAlarmsQuery.data]
+  )
   const showMultiSiteMeta = authUser.allowedSiteIds.length > 1
   const isSs2Room = /^SS2\b/i.test(room)
   const pressureVariants = extractSignalVariants(signals, 'pressure')
@@ -744,6 +750,9 @@ export default function Scada() {
       selectorPlaceholder="Select site"
       scadaPlant={room}
       chartsPlant={room}
+      alarmCount={roomAlarmCount}
+      alarmContextRoom={room}
+      alarmContextPlant={site}
     >
       <div className="scada-page">
         <div className="scada-dashboard-grid">

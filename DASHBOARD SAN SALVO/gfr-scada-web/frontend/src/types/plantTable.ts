@@ -9,6 +9,7 @@ export interface PlantSignalInfo {
 export interface PlantRow {
   sala: string
   status: PlantStatus
+  activeAlarms: number
   lastUpdate: string | null
   realtimeNm3: number | null
   realtimeKwh: number | null

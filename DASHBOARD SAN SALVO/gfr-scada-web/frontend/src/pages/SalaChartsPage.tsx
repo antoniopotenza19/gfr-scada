@@ -15,6 +15,7 @@ import { INITIAL_SALA_CHART_RANGE, RANGE_PRESETS, SALA_METRICS, getSalaMetricThr
 import { SITE_ROOMS } from '../constants/siteRooms'
 import { legacyKeyToSiteId } from '../constants/sites'
 import { LIVE_SUMMARY_REFRESH_MS } from '../config/live'
+import { useAlarms } from '../hooks/useAlarms'
 import { usePlants } from '../hooks/usePlants'
 import type { CompressorActivityItem, PlantSummary, SaleChartPoint } from '../types/api'
 import { canViewDevFeatures, canViewSite, getAuthUserFromSessionToken } from '../utils/auth'
@@ -653,6 +654,11 @@ export default function SalaChartsPage() {
   const saleTitle = formatSalaDisplayLabel(selectedSaleLabel)
   const latestRealtimeUpdate = realtimeSummaryQuery.data?.last_update || chartPayload?.last_update || latestPointTs || null
   const lastUpdateLabel = formatTimeOnly(latestRealtimeUpdate)
+  const roomAlarmsQuery = useAlarms(currentSite || selectedSite, undefined, undefined, selectedSaleLabel || undefined)
+  const roomAlarmCount = useMemo(
+    () => (roomAlarmsQuery.data || []).filter((alarm) => alarm.active !== false).length,
+    [roomAlarmsQuery.data]
+  )
   const isSs2Sala = isExactSs2Sala(selectedSale, selectedSaleLabel)
   const summaryPressure = computeMetricSummary(chartPayload?.points || [], 'pressione')
   const realtimeMetricValues = computeRealtimeMetricValues(realtimeSummaryQuery.data)
@@ -1002,6 +1008,9 @@ export default function SalaChartsPage() {
       selectorPlaceholder="Seleziona impianto"
       scadaPlant={selectedSaleLabel}
       chartsPlant={selectedSaleLabel}
+      alarmCount={roomAlarmCount}
+      alarmContextRoom={selectedSaleLabel || undefined}
+      alarmContextPlant={currentSite || selectedSite}
     >
       <div className="space-y-5">
         <Card className="overflow-hidden border-slate-200/80 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] shadow-[0_20px_50px_-34px_rgba(15,23,42,0.38)]">

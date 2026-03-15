@@ -73,6 +73,17 @@ function ChartsIcon() {
   )
 }
 
+function AlarmIcon({ active }: { active: boolean }) {
+  return (
+    <span className={['relative inline-flex h-4 w-4 items-center justify-center rounded-full border', active ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-emerald-200 bg-emerald-50 text-emerald-600'].join(' ')}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5">
+        <path d="M12 4.4 4.2 18h15.6L12 4.4Z" fill="currentColor" />
+      </svg>
+      <span className="absolute h-1.5 w-1.5 rounded-full bg-white/95" />
+    </span>
+  )
+}
+
 function canonicalToken(value: string) {
   return value.toUpperCase().replace(/N[\u00B0\u00BA]/g, 'N').replace(/[^A-Z0-9]/g, '')
 }
@@ -608,6 +619,8 @@ export default function PlantTable({
                 const scadaMachines = buildInlineScadaMachines(row.sala, row.detailSignals)
                 const ss1Warning = row.sala.trim().toUpperCase() === 'SS1' && (row.flowValue ?? 0) > 0.1 && (row.potenzaMedia ?? 0) <= 0
                 const inlineRoomStatus = scadaRoomStatus(row.status, ss1Warning || row.isWarningStale || row.isAnomaly)
+                const roomAlarmCount = row.activeAlarms || 0
+                const hasRoomAlarms = roomAlarmCount > 0
 
                 return (
                   <Fragment key={row.sala}>
@@ -702,24 +715,17 @@ export default function PlantTable({
                         )}
                       </td>
                       <td className="text-center">
-                        {row.isAnomaly ? (
-                          <div
-                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700"
-                            title="Active con kW o flusso a zero: possibile perdita dati, sensore fermo o mapping errato."
-                          >
-                            <span>!</span>
-                            <span>1</span>
-                          </div>
-                        ) : row.isStale ? (
-                          <span
-                            className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700"
-                            title="Telemetria stale: ultimo aggiornamento troppo vecchio."
-                          >
-                            T
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
+                        <span
+                          className={[
+                            'inline-flex min-w-[2.1rem] items-center justify-center rounded-full border px-2.5 py-0.5 text-xs font-bold tabular-nums',
+                            hasRoomAlarms
+                              ? 'border-rose-200 bg-rose-50 text-rose-700'
+                              : 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                          ].join(' ')}
+                          title={hasRoomAlarms ? `${roomAlarmCount} allarmi attivi` : 'Nessun allarme attivo'}
+                        >
+                          {roomAlarmCount}
+                        </span>
                       </td>
                     </tr>
 
@@ -765,6 +771,28 @@ export default function PlantTable({
                                   >
                                     <ChartsIcon />
                                     Analizza grafici
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      navigate('/alarms', {
+                                        state: {
+                                          alarmContext: {
+                                            room: row.sala,
+                                          },
+                                        },
+                                      })
+                                    }}
+                                    className={[
+                                      'inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+                                      hasRoomAlarms
+                                        ? 'border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100/70'
+                                        : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100/70',
+                                    ].join(' ')}
+                                  >
+                                    <AlarmIcon active={hasRoomAlarms} />
+                                    <span>{roomAlarmCount}</span>
                                   </button>
                                 </div>
                               </div>
